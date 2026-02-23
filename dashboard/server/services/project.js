@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync } from 'fs';
-import { join, dirname, relative, isAbsolute, resolve } from 'path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, readdirSync } from 'fs';
+import { join, dirname, relative, isAbsolute, resolve, basename } from 'path';
 import { getSettings, updateSettings } from './settings.js';
 
 const MANIFEST_NAME = 'gl-project.json';
@@ -65,15 +65,96 @@ export function isValidProject(dir) {
   return existsSync(join(dir, MANIFEST_NAME));
 }
 
+/**
+ * Returns 1 for old-format manifest (bankingFile/cashFlowFile/archiveDir)
+ * or 2 for new-format (cashFlowFile + transactionFiles map).
+ */
+export function manifestVersion(manifest) {
+  if (!manifest) return 0;
+  if (manifest.transactionFiles && typeof manifest.transactionFiles === 'object') return 2;
+  return 1;
+}
+
+/**
+ * Migrate a v1 manifest to v2 in-place.
+ * Scans archiveDir for year files and builds the transactionFiles map.
+ */
+export function migrateManifestV1toV2(dir, manifest) {
+  const transactionFiles = {};
+
+  // Add the primary banking file
+  if (manifest.bankingFile) {
+    const absPath = isAbsolute(manifest.bankingFile)
+      ? manifest.bankingFile
+      : resolve(dir, manifest.bankingFile);
+    const name = basename(absPath);
+    const m = name.match(/(\d{4})\.xlsx$/);
+    if (m && existsSync(absPath)) {
+      // Store relative path
+      const rel = isAbsolute(manifest.bankingFile)
+        ? toManifestPathFor(dir, manifest.bankingFile)
+        : manifest.bankingFile;
+      transactionFiles[m[1]] = rel;
+    }
+  }
+
+  // Scan archive directory for additional year files
+  if (manifest.archiveDir) {
+    const archiveAbs = isAbsolute(manifest.archiveDir)
+      ? manifest.archiveDir
+      : resolve(dir, manifest.archiveDir);
+    if (existsSync(archiveAbs)) {
+      try {
+        const files = readdirSync(archiveAbs);
+        for (const f of files) {
+          const m = f.match(/(\d{4})\.xlsx$/);
+          if (m && !transactionFiles[m[1]]) {
+            const fullPath = join(archiveAbs, f);
+            if (existsSync(fullPath)) {
+              transactionFiles[m[1]] = toManifestPathFor(dir, fullPath);
+            }
+          }
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+  }
+
+  const v2 = {
+    cashFlowFile: manifest.cashFlowFile,
+    transactionFiles,
+  };
+  return v2;
+}
+
+/** toManifestPath that works with an explicit dir instead of _projectDir */
+function toManifestPathFor(dir, absPath) {
+  if (!absPath || !dir) return absPath;
+  if (!isAbsolute(absPath)) return absPath;
+  const rel = relative(dir, absPath);
+  if (!rel.startsWith('..') && !isAbsolute(rel)) return rel;
+  return absPath;
+}
+
 export function openProject(dir) {
-  const manifest = readManifest(dir);
+  let manifest = readManifest(dir);
   if (!manifest) throw new Error('No gl-project.json found in ' + dir);
+
   _projectDir = dir;
+
+  // Auto-migrate v1 → v2
+  if (manifestVersion(manifest) === 1) {
+    manifest = migrateManifestV1toV2(dir, manifest);
+    writeManifest(dir, manifest);
+  }
+
   _manifest = manifest;
   updateSettings({ lastProjectDir: dir });
   return manifest;
 }
 
+/** Legacy v1 project creation — kept for backward compat */
 export function createProject(dir, { bankingFile, cashFlowFile, archiveDir }) {
   // Create .gl-data directory
   mkdirSync(join(dir, DATA_DIR_NAME, 'audit'), { recursive: true });
@@ -85,6 +166,32 @@ export function createProject(dir, { bankingFile, cashFlowFile, archiveDir }) {
     cashFlowFile: toManifestPath(cashFlowFile),
     archiveDir: toManifestPath(archiveDir),
   };
+  writeManifest(dir, manifest);
+  _manifest = manifest;
+
+  // Immediately migrate to v2 so we're always on the new format
+  const v2 = migrateManifestV1toV2(dir, manifest);
+  writeManifest(dir, v2);
+  _manifest = v2;
+
+  updateSettings({ lastProjectDir: dir });
+  return v2;
+}
+
+/** Create a v2 project directly */
+export function createProjectV2(dir, { cashFlowFile, transactionFiles }) {
+  mkdirSync(join(dir, DATA_DIR_NAME, 'audit'), { recursive: true });
+
+  _projectDir = dir;
+  const manifest = {
+    cashFlowFile: toManifestPath(cashFlowFile),
+    transactionFiles: {},
+  };
+
+  for (const [year, filePath] of Object.entries(transactionFiles)) {
+    manifest.transactionFiles[year] = toManifestPath(filePath);
+  }
+
   writeManifest(dir, manifest);
   _manifest = manifest;
   updateSettings({ lastProjectDir: dir });
@@ -109,7 +216,7 @@ export function migrateFromOldSettings(settings) {
   // Derive project dir from the banking file's directory
   const projectDir = dirname(bankingFile);
 
-  // Create manifest
+  // Create manifest (will auto-migrate to v2)
   createProject(projectDir, { bankingFile, cashFlowFile, archiveDir });
 
   // Copy audit logs from .gulliver-data/audit/ to .gl-data/audit/ if they exist

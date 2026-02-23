@@ -10,6 +10,7 @@ import {
   getBankingFile,
   getCashFlowFile,
   listBankingYears,
+  registerTransactionFile,
 } from '../config.js';
 
 // ---------------------------------------------------------------------------
@@ -634,6 +635,10 @@ export async function ensureBankingFile(year) {
   }
 
   await wb.toFileAsync(filePath);
+
+  // Register the new file in the v2 manifest
+  registerTransactionFile(year, filePath);
+
   return true; // created
 }
 

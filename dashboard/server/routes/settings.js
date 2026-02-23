@@ -8,36 +8,60 @@ import {
   getProjectDir,
   openProject,
   createProject,
+  createProjectV2,
   closeProject,
   isValidProject,
+  manifestVersion,
+  getManifest,
 } from '../services/project.js';
+import { detectFilesInDir, detectFileType, buildProposal } from '../services/detect.js';
 
 const router = Router();
 
-function fileStatus({ bankingFile, cashFlowFile, archiveDir }) {
-  return {
-    bankingFile: existsSync(bankingFile),
-    cashFlowFile: existsSync(cashFlowFile),
-    archiveDir: existsSync(archiveDir) || null,
+function fileStatus(paths) {
+  const status = {
+    bankingFile: paths.bankingFile ? existsSync(paths.bankingFile) : false,
+    cashFlowFile: paths.cashFlowFile ? existsSync(paths.cashFlowFile) : false,
   };
+  if (paths.archiveDir) {
+    status.archiveDir = existsSync(paths.archiveDir) || null;
+  }
+  return status;
 }
 
 router.get('/', (req, res) => {
   const projectDir = getProjectDir();
   const paths = getFilePaths();
   const defaults = getDefaultFilePaths();
+  const manifest = getManifest();
+  const version = manifestVersion(manifest);
+
   const isCustom =
     paths.bankingFile !== defaults.bankingFile ||
-    paths.cashFlowFile !== defaults.cashFlowFile ||
-    paths.archiveDir !== defaults.archiveDir;
-  res.json({
+    paths.cashFlowFile !== defaults.cashFlowFile;
+
+  const response = {
     ...paths,
     defaults,
     isCustom,
     projectDir,
     hasProject: hasProject(),
     fileStatus: fileStatus(paths),
-  });
+    manifestVersion: version,
+  };
+
+  // Include transaction files info for v2
+  if (version === 2 && paths.transactionFiles) {
+    response.transactionFiles = paths.transactionFiles;
+    // Build status for each transaction file
+    const txStatus = {};
+    for (const [year, filePath] of Object.entries(paths.transactionFiles)) {
+      txStatus[year] = existsSync(filePath);
+    }
+    response.transactionFileStatus = txStatus;
+  }
+
+  res.json(response);
 });
 
 function resolveStartDir(requested) {
@@ -53,7 +77,7 @@ function resolveStartDir(requested) {
 
 // Browse directories (for archive dir picker)
 router.get('/browse', async (req, res) => {
-  const requested = req.query.path || (hasProject() ? getProjectDir() : dirname(getFilePaths().bankingFile));
+  const requested = req.query.path || (hasProject() ? getProjectDir() : dirname(getFilePaths().bankingFile || ''));
   const dirPath = resolveStartDir(requested);
   try {
     const resolved = resolve(dirPath);
@@ -75,7 +99,7 @@ router.get('/browse', async (req, res) => {
 
 // Browse files (for file picker — shows .xlsx files + directories)
 router.get('/browse-files', async (req, res) => {
-  const requested = req.query.path || (hasProject() ? getProjectDir() : dirname(getFilePaths().bankingFile));
+  const requested = req.query.path || (hasProject() ? getProjectDir() : dirname(getFilePaths().bankingFile || ''));
   const dirPath = resolveStartDir(requested);
   try {
     const resolved = resolve(dirPath);
@@ -123,6 +147,32 @@ router.post('/check-project', (req, res) => {
   res.json({ exists, hasManifest });
 });
 
+// Detect file types in a directory or set of files
+router.post('/detect-files', async (req, res) => {
+  const { dir, files } = req.body;
+  try {
+    if (dir) {
+      const detected = await detectFilesInDir(dir);
+      res.json(buildProposal(detected));
+    } else if (files && Array.isArray(files)) {
+      const detected = [];
+      for (const filePath of files) {
+        const info = await detectFileType(filePath);
+        detected.push({
+          relativePath: filePath,
+          absolutePath: filePath,
+          ...info,
+        });
+      }
+      res.json(buildProposal(detected));
+    } else {
+      res.status(400).json({ error: 'dir or files[] is required' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Open an existing project folder
 router.post('/open-project', (req, res) => {
   const { dir } = req.body;
@@ -135,6 +185,7 @@ router.post('/open-project', (req, res) => {
       projectDir: getProjectDir(),
       hasProject: true,
       fileStatus: fileStatus(paths),
+      manifestVersion: manifestVersion(getManifest()),
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -143,18 +194,28 @@ router.post('/open-project', (req, res) => {
 
 // Create a new project in a directory
 router.post('/create-project', (req, res) => {
-  const { dir, bankingFile, cashFlowFile, archiveDir } = req.body;
+  const { dir, bankingFile, cashFlowFile, archiveDir, transactionFiles } = req.body;
   if (!dir) return res.status(400).json({ error: 'dir is required' });
-  if (!bankingFile) return res.status(400).json({ error: 'bankingFile is required' });
-  if (!cashFlowFile) return res.status(400).json({ error: 'cashFlowFile is required' });
+
   try {
-    createProject(dir, { bankingFile, cashFlowFile, archiveDir: archiveDir || '' });
+    // v2 format: transactionFiles map provided
+    if (transactionFiles && typeof transactionFiles === 'object') {
+      if (!cashFlowFile) return res.status(400).json({ error: 'cashFlowFile is required' });
+      createProjectV2(dir, { cashFlowFile, transactionFiles });
+    } else {
+      // Legacy v1 format (auto-migrates to v2)
+      if (!bankingFile) return res.status(400).json({ error: 'bankingFile is required' });
+      if (!cashFlowFile) return res.status(400).json({ error: 'cashFlowFile is required' });
+      createProject(dir, { bankingFile, cashFlowFile, archiveDir: archiveDir || '' });
+    }
+
     const paths = getFilePaths();
     res.json({
       ...paths,
       projectDir: getProjectDir(),
       hasProject: true,
       fileStatus: fileStatus(paths),
+      manifestVersion: manifestVersion(getManifest()),
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -162,8 +223,8 @@ router.post('/create-project', (req, res) => {
 });
 
 router.put('/', (req, res) => {
-  const { bankingFile, cashFlowFile, archiveDir } = req.body;
-  if (!bankingFile && !cashFlowFile && !archiveDir) {
+  const { bankingFile, cashFlowFile, archiveDir, transactionFiles } = req.body;
+  if (!bankingFile && !cashFlowFile && !archiveDir && !transactionFiles) {
     return res.status(400).json({ error: 'At least one path is required' });
   }
 
@@ -180,6 +241,9 @@ router.put('/', (req, res) => {
   if (archiveDir) {
     update.archiveDir = archiveDir;
   }
+  if (transactionFiles) {
+    update.transactionFiles = transactionFiles;
+  }
 
   const merged = { ...current, ...update };
   setFilePaths(merged);
@@ -187,8 +251,7 @@ router.put('/', (req, res) => {
   const defaults = getDefaultFilePaths();
   const isCustom =
     merged.bankingFile !== defaults.bankingFile ||
-    merged.cashFlowFile !== defaults.cashFlowFile ||
-    merged.archiveDir !== defaults.archiveDir;
+    merged.cashFlowFile !== defaults.cashFlowFile;
 
   res.json({
     ...merged,
@@ -197,6 +260,7 @@ router.put('/', (req, res) => {
     defaults,
     isCustom,
     fileStatus: fileStatus(merged),
+    manifestVersion: manifestVersion(getManifest()),
   });
 });
 

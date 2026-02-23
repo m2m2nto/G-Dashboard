@@ -1,6 +1,7 @@
 import { resolve, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { readdir, access } from 'fs/promises';
+import { existsSync } from 'fs';
 import {
   bootstrap,
   getProjectDir,
@@ -8,6 +9,7 @@ import {
   resolvePath,
   toManifestPath,
   writeManifest,
+  manifestVersion,
 } from './services/project.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,28 +30,82 @@ export function hasProject() {
 
 export function getFilePaths() {
   const manifest = getManifest();
-  if (manifest) {
+  if (!manifest) {
     return {
-      bankingFile: resolvePath(manifest.bankingFile),
-      cashFlowFile: resolvePath(manifest.cashFlowFile),
-      archiveDir: resolvePath(manifest.archiveDir),
+      bankingFile: resolve(DEFAULT_DATA_DIR, 'Banking transactions - Gulliver Lux 2026.xlsx'),
+      cashFlowFile: resolve(DEFAULT_DATA_DIR, 'Cash Flow Gulliver Lux.xlsx'),
+      transactionFiles: {},
     };
   }
-  // Fallback for no-project state (shouldn't be reached in normal flow)
+
+  if (manifestVersion(manifest) === 2) {
+    // v2: resolve all transaction file paths
+    const resolvedTxFiles = {};
+    for (const [year, relPath] of Object.entries(manifest.transactionFiles || {})) {
+      resolvedTxFiles[year] = resolvePath(relPath);
+    }
+
+    // Backward compat: bankingFile = latest year's transaction file
+    const years = Object.keys(resolvedTxFiles).sort();
+    const latestYear = years[years.length - 1];
+    const bankingFile = latestYear ? resolvedTxFiles[latestYear] : null;
+
+    return {
+      bankingFile,
+      cashFlowFile: resolvePath(manifest.cashFlowFile),
+      transactionFiles: resolvedTxFiles,
+    };
+  }
+
+  // v1 fallback (shouldn't happen after migration, but safe)
   return {
-    bankingFile: resolve(DEFAULT_DATA_DIR, 'Banking transactions - Gulliver Lux 2026.xlsx'),
-    cashFlowFile: resolve(DEFAULT_DATA_DIR, 'Cash Flow Gulliver Lux.xlsx'),
-    archiveDir: resolve(DEFAULT_DATA_DIR, 'Banking transactions'),
+    bankingFile: resolvePath(manifest.bankingFile),
+    cashFlowFile: resolvePath(manifest.cashFlowFile),
+    archiveDir: resolvePath(manifest.archiveDir),
+    transactionFiles: {},
   };
 }
 
-export function setFilePaths({ bankingFile, cashFlowFile, archiveDir }) {
+export function setFilePaths({ bankingFile, cashFlowFile, archiveDir, transactionFiles }) {
   const projectDir = getProjectDir();
   if (!projectDir) return;
   const manifest = getManifest() || {};
-  if (bankingFile !== undefined) manifest.bankingFile = toManifestPath(bankingFile);
-  if (cashFlowFile !== undefined) manifest.cashFlowFile = toManifestPath(cashFlowFile);
-  if (archiveDir !== undefined) manifest.archiveDir = toManifestPath(archiveDir);
+
+  if (manifestVersion(manifest) === 2) {
+    if (cashFlowFile !== undefined) manifest.cashFlowFile = toManifestPath(cashFlowFile);
+    if (transactionFiles !== undefined) {
+      for (const [year, filePath] of Object.entries(transactionFiles)) {
+        manifest.transactionFiles[year] = toManifestPath(filePath);
+      }
+    }
+    // If bankingFile is set explicitly and we can detect its year, add it to transactionFiles
+    if (bankingFile !== undefined && !transactionFiles) {
+      const name = basename(bankingFile);
+      const m = name.match(/(\d{4})\.xlsx$/);
+      if (m) {
+        if (!manifest.transactionFiles) manifest.transactionFiles = {};
+        manifest.transactionFiles[m[1]] = toManifestPath(bankingFile);
+      }
+    }
+  } else {
+    // v1 compat
+    if (bankingFile !== undefined) manifest.bankingFile = toManifestPath(bankingFile);
+    if (cashFlowFile !== undefined) manifest.cashFlowFile = toManifestPath(cashFlowFile);
+    if (archiveDir !== undefined) manifest.archiveDir = toManifestPath(archiveDir);
+  }
+
+  writeManifest(projectDir, manifest);
+}
+
+/**
+ * Register a new transaction file for a specific year in the v2 manifest.
+ */
+export function registerTransactionFile(year, filePath) {
+  const projectDir = getProjectDir();
+  if (!projectDir) return;
+  const manifest = getManifest();
+  if (!manifest || manifestVersion(manifest) !== 2) return;
+  manifest.transactionFiles[String(year)] = toManifestPath(filePath);
   writeManifest(projectDir, manifest);
 }
 
@@ -58,40 +114,76 @@ export function getDefaultFilePaths() {
   return {
     bankingFile: resolve(dir, 'Banking transactions - Gulliver Lux 2026.xlsx'),
     cashFlowFile: resolve(dir, 'Cash Flow Gulliver Lux.xlsx'),
-    archiveDir: resolve(dir, 'Banking transactions'),
   };
 }
 
 export function getBankingFile(year) {
   const y = String(year);
-  const paths = getFilePaths();
-  const currentName = basename(paths.bankingFile);
-  const currentMatch = currentName.match(/(\d{4})\.xlsx$/);
-  const currentYear = currentMatch ? currentMatch[1] : '2026';
+  const manifest = getManifest();
 
-  if (y === currentYear) return paths.bankingFile;
-  // Look in archive directory for other years
-  return resolve(paths.archiveDir, `Banking transactions - Gulliver Lux ${y}.xlsx`);
+  // v2: direct lookup from transactionFiles map
+  if (manifest && manifestVersion(manifest) === 2) {
+    const txFiles = manifest.transactionFiles || {};
+    if (txFiles[y]) return resolvePath(txFiles[y]);
+
+    // Derive path from an existing filename pattern
+    const existingYears = Object.keys(txFiles).sort();
+    if (existingYears.length > 0) {
+      const refYear = existingYears[existingYears.length - 1];
+      const refPath = resolvePath(txFiles[refYear]);
+      return refPath.replace(refYear, y);
+    }
+  }
+
+  // Fallback for no manifest or v1
+  const paths = getFilePaths();
+  if (paths.bankingFile) {
+    const currentName = basename(paths.bankingFile);
+    const currentMatch = currentName.match(/(\d{4})\.xlsx$/);
+    const currentYear = currentMatch ? currentMatch[1] : '2026';
+    if (y === currentYear) return paths.bankingFile;
+  }
+
+  // Last resort
+  const dir = getProjectDir() || DEFAULT_DATA_DIR;
+  return resolve(dir, `Banking transactions - Gulliver Lux ${y}.xlsx`);
 }
 
 export async function listBankingYears() {
+  const manifest = getManifest();
+
+  // v2: return keys from transactionFiles map (verify files exist)
+  if (manifest && manifestVersion(manifest) === 2) {
+    const txFiles = manifest.transactionFiles || {};
+    const years = [];
+    for (const [year, relPath] of Object.entries(txFiles)) {
+      const absPath = resolvePath(relPath);
+      try {
+        await access(absPath);
+        years.push(year);
+      } catch {}
+    }
+    return years.sort().reverse();
+  }
+
+  // v1 fallback
   const years = [];
   const paths = getFilePaths();
-  // Check the primary banking file
   try {
     await access(paths.bankingFile);
     const name = basename(paths.bankingFile);
     const m = name.match(/(\d{4})\.xlsx$/);
     if (m) years.push(m[1]);
   } catch {}
-  // Check archive directory
-  try {
-    const files = await readdir(paths.archiveDir);
-    for (const f of files) {
-      const m = f.match(/Banking transactions - Gulliver Lux (\d{4})\.xlsx$/);
-      if (m && !years.includes(m[1])) years.push(m[1]);
-    }
-  } catch {}
+  if (paths.archiveDir) {
+    try {
+      const files = await readdir(paths.archiveDir);
+      for (const f of files) {
+        const m = f.match(/Banking transactions - Gulliver Lux (\d{4})\.xlsx$/);
+        if (m && !years.includes(m[1])) years.push(m[1]);
+      }
+    } catch {}
+  }
   return years.sort().reverse();
 }
 

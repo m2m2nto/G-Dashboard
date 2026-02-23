@@ -78,11 +78,11 @@ export const getYoYQoQ = () => request('/charts/yoy-qoq');
 
 export const getSettings = () => request('/settings');
 
-export const updateSettings = ({ bankingFile, cashFlowFile, archiveDir }) =>
+export const updateSettings = ({ bankingFile, cashFlowFile, archiveDir, transactionFiles }) =>
   request('/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bankingFile, cashFlowFile, archiveDir }),
+    body: JSON.stringify({ bankingFile, cashFlowFile, archiveDir, transactionFiles }),
   });
 
 export const resetSettings = () =>
@@ -102,11 +102,18 @@ export const openProject = (dir) =>
     body: JSON.stringify({ dir }),
   });
 
-export const createProject = ({ dir, bankingFile, cashFlowFile, archiveDir }) =>
+export const createProject = ({ dir, bankingFile, cashFlowFile, archiveDir, transactionFiles }) =>
   request('/settings/create-project', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dir, bankingFile, cashFlowFile, archiveDir }),
+    body: JSON.stringify({ dir, bankingFile, cashFlowFile, archiveDir, transactionFiles }),
+  });
+
+export const detectFiles = ({ dir, files }) =>
+  request('/settings/detect-files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dir, files }),
   });
 
 export const checkDir = (path) =>

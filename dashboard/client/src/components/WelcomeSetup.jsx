@@ -1,367 +1,334 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_GHOST } from '../ui.js';
-import { getSettings, checkFile, checkDir, checkProject, openProject, createProject } from '../api.js';
-import FilePicker from './FilePicker.jsx';
+import { checkProject, openProject, createProject, detectFiles } from '../api.js';
 import DirectoryPicker from './DirectoryPicker.jsx';
 
-function FileSection({ icon, label, description, optional, path, status, onBrowse, checking }) {
-  const statusIcon = status === true
-    ? <span className="material-symbols-outlined text-status-positive" style={{ fontSize: '16px' }}>check_circle</span>
-    : status === false
-    ? <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
-    : null;
-
+function Spinner({ size = 'h-4 w-4', className = '' }) {
   return (
-    <div className="rounded-xl bg-surface-container px-4 py-3 text-left">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="material-symbols-outlined text-on-surface-secondary" style={{ fontSize: '18px' }}>{icon}</span>
-        <span className="text-sm font-medium text-on-surface">{label}</span>
-        {optional && <span className="text-xs text-on-surface-tertiary">(Optional)</span>}
-        {statusIcon}
-      </div>
-      <p className="text-xs text-on-surface-tertiary mb-2">{description}</p>
-      <div className="flex gap-2">
-        <div className="flex-1 min-w-0 text-xs text-on-surface-tertiary bg-white rounded-lg px-3 py-2 truncate border border-surface-border select-text" title={path}>
-          {path || <span className="italic">Not set</span>}
-        </div>
-        <button onClick={onBrowse} disabled={checking} className={BUTTON_NEUTRAL + ' shrink-0 !h-8 !px-3 !text-xs'}>
-          {checking ? (
-            <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          ) : (
-            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>folder_open</span>
-          )}
-          Browse
-        </button>
-      </div>
-    </div>
+    <svg className={`animate-spin ${size} ${className}`} viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
   );
 }
 
-export default function WelcomeSetup({ onComplete }) {
-  // Phase 1: select project folder, Phase 2: configure file paths
-  const [phase, setPhase] = useState(1);
-  const [projectDir, setProjectDir] = useState('');
-  const [projectStatus, setProjectStatus] = useState(null); // null | 'checking' | 'found' | 'new' | 'error'
-  const [dirPicker, setDirPicker] = useState(false);
+function FileTypeIcon({ type }) {
+  const icon = type === 'cashflow' ? 'monitoring' : type === 'transactions' ? 'description' : 'help_outline';
+  const color = type === 'unknown' ? 'text-on-surface-tertiary' : 'text-primary';
+  return <span className={`material-symbols-outlined ${color}`} style={{ fontSize: '18px' }}>{icon}</span>;
+}
 
-  // Phase 2 state
-  const [bankingFile, setBankingFile] = useState('');
-  const [cashFlowFile, setCashFlowFile] = useState('');
-  const [archiveDir, setArchiveDir] = useState('');
-  const [fileStatus, setFileStatus] = useState({});
-  const [checking, setChecking] = useState({});
+export default function WelcomeSetup({ onComplete }) {
+  // Steps: 'select' | 'scanning' | 'confirm'
+  const [step, setStep] = useState('select');
+  const [projectDir, setProjectDir] = useState('');
+  const [dirPicker, setDirPicker] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [picker, setPicker] = useState(null); // 'banking' | 'cashflow' | 'archive' | null
+  const [error, setError] = useState(null);
+
+  // Detection results
+  const [proposal, setProposal] = useState(null);
+  const [detected, setDetected] = useState([]);
+  const [warnings, setWarnings] = useState([]);
 
   const isElectron = !!window.electronAPI;
 
-  const handleSelectProjectDir = async (dir) => {
+  // --- Step 1: Select folder (or files) ---
+
+  const handleSelectFolder = async (dir) => {
     setDirPicker(false);
     if (!dir) return;
     setProjectDir(dir);
-    setProjectStatus('checking');
+    setError(null);
+
+    // Check if folder already has a project
     try {
       const result = await checkProject(dir);
       if (result.hasManifest) {
-        setProjectStatus('found');
-      } else if (result.exists) {
-        setProjectStatus('new');
-      } else {
-        setProjectStatus('error');
+        // Existing project — open directly
+        setSaving(true);
+        try {
+          await openProject(dir);
+          onComplete();
+        } catch (err) {
+          setError(err.message);
+          setSaving(false);
+        }
+        return;
       }
     } catch {
-      setProjectStatus('error');
+      // Continue to detection
     }
-  };
 
-  const handleOpenExisting = async () => {
-    setSaving(true);
+    // No existing project — scan for files
+    setStep('scanning');
     try {
-      await openProject(projectDir);
-      onComplete();
-    } catch {
-      setProjectStatus('error');
-      setSaving(false);
+      const result = await detectFiles({ dir });
+      setProposal(result.proposal);
+      setDetected(result.detected);
+      setWarnings(result.warnings);
+      setStep('confirm');
+    } catch (err) {
+      setError(err.message || 'Failed to scan directory');
+      setStep('select');
     }
   };
 
-  const handleProceedToPhase2 = () => {
-    // Pre-fill defaults based on project dir
-    setBankingFile('');
-    setCashFlowFile('');
-    setArchiveDir('');
-    setFileStatus({});
-    setPhase(2);
-  };
+  const handleSelectFiles = async () => {
+    const files = await window.electronAPI.selectFiles({ title: 'Select Excel Files' });
+    if (!files || files.length === 0) return;
+    setError(null);
 
-  // Phase 2 helpers
-  const verifyFile = async (path, key) => {
-    setChecking((c) => ({ ...c, [key]: true }));
+    setStep('scanning');
     try {
-      const result = await checkFile(path);
-      setFileStatus((s) => ({ ...s, [key]: result.valid }));
-    } catch {
-      setFileStatus((s) => ({ ...s, [key]: false }));
+      const result = await detectFiles({ files });
+      setProposal(result.proposal);
+      setDetected(result.detected);
+      setWarnings(result.warnings);
+      // Use common parent directory as project dir
+      const firstFile = files[0];
+      const parentDir = firstFile.substring(0, firstFile.lastIndexOf('/'));
+      setProjectDir(parentDir);
+      setStep('confirm');
+    } catch (err) {
+      setError(err.message || 'Failed to detect file types');
+      setStep('select');
     }
-    setChecking((c) => ({ ...c, [key]: false }));
   };
 
-  const verifyDir = async (path, key) => {
-    setChecking((c) => ({ ...c, [key]: true }));
-    try {
-      const result = await checkDir(path);
-      setFileStatus((s) => ({ ...s, [key]: result.valid }));
-    } catch {
-      setFileStatus((s) => ({ ...s, [key]: false }));
-    }
-    setChecking((c) => ({ ...c, [key]: false }));
-  };
-
-  const handleBrowseBanking = async () => {
+  const handleBrowseFolder = () => {
     if (isElectron) {
-      const file = await window.electronAPI.selectFile({ title: 'Select Banking Transactions File' });
-      if (file) {
-        setBankingFile(file);
-        verifyFile(file, 'bankingFile');
-      }
+      window.electronAPI.selectDirectory().then((dir) => {
+        if (dir) handleSelectFolder(dir);
+      });
     } else {
-      setPicker('banking');
+      setDirPicker(true);
     }
   };
 
-  const handleBrowseCashFlow = async () => {
-    if (isElectron) {
-      const file = await window.electronAPI.selectFile({ title: 'Select Cash Flow File' });
-      if (file) {
-        setCashFlowFile(file);
-        verifyFile(file, 'cashFlowFile');
-      }
-    } else {
-      setPicker('cashflow');
-    }
-  };
-
-  const handleBrowseArchive = async () => {
-    if (isElectron) {
-      const dir = await window.electronAPI.selectDirectory();
-      if (dir) {
-        setArchiveDir(dir);
-        verifyDir(dir, 'archiveDir');
-      }
-    } else {
-      setPicker('archive');
-    }
-  };
-
-  const handleFileSelect = (field) => (filePath) => {
-    setPicker(null);
-    if (field === 'banking') {
-      setBankingFile(filePath);
-      verifyFile(filePath, 'bankingFile');
-    } else if (field === 'cashflow') {
-      setCashFlowFile(filePath);
-      verifyFile(filePath, 'cashFlowFile');
-    }
-  };
-
-  const handleDirSelect = (dirPath) => {
-    setPicker(null);
-    setArchiveDir(dirPath);
-    verifyDir(dirPath, 'archiveDir');
-  };
-
-  const canContinue = fileStatus.bankingFile && fileStatus.cashFlowFile;
+  // --- Step 3: Confirm and create project ---
 
   const handleCreateProject = async () => {
+    if (!proposal) return;
     setSaving(true);
+    setError(null);
     try {
-      await createProject({ dir: projectDir, bankingFile, cashFlowFile, archiveDir });
+      // Convert relative paths to absolute for create-project
+      const cashFlowFile = proposal.cashFlowFile
+        ? `${projectDir}/${proposal.cashFlowFile}`
+        : null;
+      const transactionFiles = {};
+      for (const [year, relPath] of Object.entries(proposal.transactionFiles)) {
+        transactionFiles[year] = `${projectDir}/${relPath}`;
+      }
+
+      await createProject({
+        dir: projectDir,
+        cashFlowFile,
+        transactionFiles,
+      });
       onComplete();
-    } catch {
+    } catch (err) {
+      setError(err.message);
       setSaving(false);
     }
   };
 
-  // Phase 1: Select project folder
-  if (phase === 1) {
+  const txYears = proposal
+    ? Object.keys(proposal.transactionFiles).sort()
+    : [];
+
+  const canCreate = proposal?.cashFlowFile && txYears.length > 0;
+
+  // --- Render ---
+
+  // Step: Scanning
+  if (step === 'scanning') {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-6">
         <div className="w-full max-w-md text-center">
-          <span
-            className="material-symbols-outlined text-primary mb-4 inline-block"
-            style={{ fontSize: '48px' }}
-          >
-            folder_open
-          </span>
+          <Spinner size="h-8 w-8" className="text-primary mx-auto mb-4" />
           <h1 className="text-xl font-semibold text-on-surface mb-2">
-            Welcome to GL-Dashboard
+            Scanning Files
           </h1>
-          <p className="text-sm text-on-surface-secondary mb-6">
-            Select a project folder to get started. If the folder already contains a project, it will be opened automatically.
+          <p className="text-sm text-on-surface-secondary">
+            Detecting file types and years...
           </p>
-
-          <div className="rounded-xl bg-surface-container px-4 py-4 text-left mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-on-surface-secondary" style={{ fontSize: '18px' }}>folder</span>
-              <span className="text-sm font-medium text-on-surface">Project Folder</span>
-              {projectStatus === 'found' && (
-                <span className="ml-auto inline-flex items-center gap-1 text-xs text-status-positive font-medium">
-                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
-                  Project found
-                </span>
-              )}
-              {projectStatus === 'new' && (
-                <span className="ml-auto text-xs text-on-surface-tertiary">No project yet — configure below</span>
-              )}
-              {projectStatus === 'error' && (
-                <span className="ml-auto inline-flex items-center gap-1 text-xs text-status-negative font-medium">
-                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>error</span>
-                  Invalid directory
-                </span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0 text-xs text-on-surface-tertiary bg-white rounded-lg px-3 py-2 truncate border border-surface-border select-text" title={projectDir}>
-                {projectDir || <span className="italic">Not selected</span>}
-              </div>
-              <button
-                onClick={() => {
-                  if (isElectron) {
-                    window.electronAPI.selectDirectory().then((dir) => {
-                      if (dir) handleSelectProjectDir(dir);
-                    });
-                  } else {
-                    setDirPicker(true);
-                  }
-                }}
-                className={BUTTON_NEUTRAL + ' shrink-0 !h-8 !px-3 !text-xs'}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>folder_open</span>
-                Browse
-              </button>
-            </div>
-          </div>
-
-          {projectStatus === 'checking' && (
-            <div className="flex items-center justify-center gap-2 text-sm text-on-surface-secondary">
-              <svg className="animate-spin h-4 w-4 text-primary" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Checking...
-            </div>
-          )}
-
-          {projectStatus === 'found' && (
-            <button onClick={handleOpenExisting} disabled={saving} className={BUTTON_PRIMARY}>
-              {saving ? 'Opening...' : 'Open Project'}
-            </button>
-          )}
-
-          {projectStatus === 'new' && (
-            <button onClick={handleProceedToPhase2} className={BUTTON_PRIMARY}>
-              Configure Project
-            </button>
-          )}
+          <p className="text-xs text-on-surface-tertiary mt-2 truncate" title={projectDir}>
+            {projectDir}
+          </p>
         </div>
-
-        {dirPicker && (
-          <DirectoryPicker
-            initial={projectDir}
-            onSelect={handleSelectProjectDir}
-            onCancel={() => setDirPicker(false)}
-          />
-        )}
       </div>
     );
   }
 
-  // Phase 2: Configure file paths
+  // Step: Confirm
+  if (step === 'confirm') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-6">
+        <div className="w-full max-w-md text-center">
+          <span className="material-symbols-outlined text-primary mb-4 inline-block" style={{ fontSize: '48px' }}>
+            fact_check
+          </span>
+          <h1 className="text-xl font-semibold text-on-surface mb-2">
+            Confirm Project Setup
+          </h1>
+          <p className="text-xs text-on-surface-tertiary mb-4 truncate" title={projectDir}>
+            {projectDir}
+          </p>
+
+          {/* Warnings */}
+          {warnings.length > 0 && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left mb-4">
+              {warnings.map((w, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-amber-800">
+                  <span className="material-symbols-outlined shrink-0" style={{ fontSize: '14px' }}>warning</span>
+                  {w}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Cash Flow File */}
+          <div className="rounded-xl bg-surface-container px-4 py-3 text-left mb-3">
+            <div className="flex items-center gap-2 mb-1">
+              <FileTypeIcon type="cashflow" />
+              <span className="text-sm font-medium text-on-surface">Cash Flow</span>
+              {proposal?.cashFlowFile ? (
+                <span className="ml-auto">
+                  <span className="material-symbols-outlined text-status-positive" style={{ fontSize: '16px' }}>check_circle</span>
+                </span>
+              ) : (
+                <span className="ml-auto">
+                  <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-on-surface-tertiary truncate" title={proposal?.cashFlowFile}>
+              {proposal?.cashFlowFile || 'Not found'}
+            </div>
+          </div>
+
+          {/* Transaction Files */}
+          <div className="rounded-xl bg-surface-container px-4 py-3 text-left mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <FileTypeIcon type="transactions" />
+              <span className="text-sm font-medium text-on-surface">Transaction Files</span>
+              {txYears.length > 0 ? (
+                <span className="ml-auto text-xs text-on-surface-tertiary">{txYears.length} file{txYears.length !== 1 ? 's' : ''}</span>
+              ) : (
+                <span className="ml-auto">
+                  <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
+                </span>
+              )}
+            </div>
+            {txYears.length > 0 ? (
+              <div className="space-y-1">
+                {txYears.map((year) => (
+                  <div key={year} className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-on-surface w-10">{year}</span>
+                    <span className="text-on-surface-tertiary truncate flex-1" title={proposal.transactionFiles[year]}>
+                      {proposal.transactionFiles[year]}
+                    </span>
+                    <span className="material-symbols-outlined text-status-positive shrink-0" style={{ fontSize: '14px' }}>check_circle</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-on-surface-tertiary">No transaction files found</div>
+            )}
+          </div>
+
+          {/* Unrecognized files */}
+          {detected.filter((d) => d.type === 'unknown').length > 0 && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left mb-4">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="material-symbols-outlined text-amber-600" style={{ fontSize: '18px' }}>help_outline</span>
+                <span className="text-sm font-medium text-amber-800">
+                  {detected.filter((d) => d.type === 'unknown').length} skipped file{detected.filter((d) => d.type === 'unknown').length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <p className="text-xs text-amber-700 mb-1.5">These files could not be recognized as transaction or cash flow files:</p>
+              <div className="space-y-0.5">
+                {detected.filter((d) => d.type === 'unknown').map((d, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-amber-800">
+                    <span className="material-symbols-outlined shrink-0" style={{ fontSize: '12px' }}>description</span>
+                    <span className="truncate">{d.relativePath}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="text-xs text-status-negative mb-3">{error}</div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => { setStep('select'); setError(null); }}
+              className={BUTTON_GHOST}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>arrow_back</span>
+              Back
+            </button>
+            <button
+              onClick={handleCreateProject}
+              disabled={!canCreate || saving}
+              className={BUTTON_PRIMARY}
+            >
+              {saving ? 'Creating...' : 'Open Project'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Step: Select (default)
   return (
     <div className="min-h-screen bg-white flex items-center justify-center p-6">
       <div className="w-full max-w-md text-center">
-        <span
-          className="material-symbols-outlined text-primary mb-4 inline-block"
-          style={{ fontSize: '48px' }}
-        >
-          settings
+        <span className="material-symbols-outlined text-primary mb-4 inline-block" style={{ fontSize: '48px' }}>
+          folder_open
         </span>
         <h1 className="text-xl font-semibold text-on-surface mb-2">
-          Configure Project
+          Welcome to GL-Dashboard
         </h1>
-        <p className="text-sm text-on-surface-secondary mb-1">
-          Select the Excel data files for this project.
-        </p>
-        <p className="text-xs text-on-surface-tertiary mb-6 truncate" title={projectDir}>
-          Project folder: {projectDir}
+        <p className="text-sm text-on-surface-secondary mb-6">
+          Select a folder containing your Excel data files. The system will automatically detect transaction files and cash flow files.
         </p>
 
-        <div className="space-y-3 mb-6">
-          <FileSection
-            icon="description"
-            label="Transaction File"
-            description="The Excel file with monthly banking transaction sheets."
-            path={bankingFile}
-            status={fileStatus.bankingFile}
-            onBrowse={handleBrowseBanking}
-            checking={checking.bankingFile}
-          />
-          <FileSection
-            icon="monitoring"
-            label="Cash Flow File"
-            description="The Excel file with yearly cash flow projection sheets."
-            path={cashFlowFile}
-            status={fileStatus.cashFlowFile}
-            onBrowse={handleBrowseCashFlow}
-            checking={checking.cashFlowFile}
-          />
-          <FileSection
-            icon="inventory_2"
-            label="Archive Directory"
-            description="Folder containing banking transaction files for previous years."
-            path={archiveDir}
-            status={fileStatus.archiveDir}
-            onBrowse={handleBrowseArchive}
-            checking={checking.archiveDir}
-            optional
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <button onClick={() => setPhase(1)} className={BUTTON_GHOST}>
-            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>arrow_back</span>
-            Back
+        <div className="space-y-3 mb-4">
+          <button onClick={handleBrowseFolder} disabled={saving} className={BUTTON_PRIMARY + ' w-full'}>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>folder_open</span>
+            Select Folder
           </button>
-          {canContinue && (
-            <button onClick={handleCreateProject} disabled={saving} className={BUTTON_PRIMARY}>
-              {saving ? 'Creating...' : 'Continue'}
+          {isElectron && (
+            <button onClick={handleSelectFiles} disabled={saving} className={BUTTON_NEUTRAL + ' w-full'}>
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>upload_file</span>
+              Select Files
             </button>
           )}
         </div>
+
+        {error && (
+          <div className="text-xs text-status-negative mb-3">{error}</div>
+        )}
+
+        {saving && (
+          <div className="flex items-center justify-center gap-2 text-sm text-on-surface-secondary">
+            <Spinner className="text-primary" />
+            Opening project...
+          </div>
+        )}
       </div>
 
-      {picker === 'banking' && (
-        <FilePicker
-          initial={bankingFile || projectDir}
-          onSelect={handleFileSelect('banking')}
-          onCancel={() => setPicker(null)}
-        />
-      )}
-      {picker === 'cashflow' && (
-        <FilePicker
-          initial={cashFlowFile || projectDir}
-          onSelect={handleFileSelect('cashflow')}
-          onCancel={() => setPicker(null)}
-        />
-      )}
-      {picker === 'archive' && (
+      {dirPicker && (
         <DirectoryPicker
-          initial={archiveDir || projectDir}
-          onSelect={handleDirSelect}
-          onCancel={() => setPicker(null)}
+          initial={projectDir}
+          onSelect={handleSelectFolder}
+          onCancel={() => setDirPicker(false)}
         />
       )}
     </div>
