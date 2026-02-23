@@ -1,5 +1,5 @@
-appId: com.gulliverlux.dashboard
-productName: Gulliver Lux
+appId: com.gl-dashboard.app
+productName: GL-Dashboard
 
 directories:
   output: dist/electron

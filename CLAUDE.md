@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Gulliver Lux Dashboard — a full-stack financial management app for tracking banking transactions and cash flow projections. Italian company context (Italian month names, EUR currency, Italian-style category naming).
+GL-Dashboard — a full-stack financial management app for tracking banking transactions and cash flow projections. Italian company context (Italian month names, EUR currency, Italian-style category naming).
 
 ## Development Commands
 

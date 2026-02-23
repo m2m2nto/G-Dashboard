@@ -69,7 +69,7 @@ export default function WelcomeSetup({ initialDir, onComplete }) {
           folder_open
         </span>
         <h1 className="text-xl font-semibold text-on-surface mb-2">
-          Welcome to Gulliver Lux
+          Welcome to GL-Dashboard
         </h1>
         <p className="text-sm text-on-surface-secondary mb-8">
           To get started, select the folder containing your Banking and Cash Flow Excel files.

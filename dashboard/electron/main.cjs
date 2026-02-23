@@ -21,7 +21,7 @@ function getFreePort() {
 }
 
 function getDataDirDefault() {
-  // In packaged .app: exe is at Contents/MacOS/Gulliver Lux
+  // In packaged .app: exe is at Contents/MacOS/GL-Dashboard
   // We want the folder *containing* the .app bundle → go up 3 levels
   const exe = app.getPath('exe');
   return path.dirname(path.dirname(path.dirname(path.dirname(exe))));
@@ -99,7 +99,7 @@ function createWindow(port) {
     width: 1400,
     height: 900,
     titleBarStyle: 'hiddenInset',
-    title: 'Gulliver Lux',
+    title: 'GL-Dashboard',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

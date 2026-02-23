@@ -351,7 +351,7 @@ export default function App() {
       {/* Nav bar */}
       <nav className="bg-white shadow-elevation-1 sticky top-0 z-10">
         <div className="max-w-content mx-auto px-6 flex items-center h-16">
-          <span className="text-base font-semibold text-on-surface mr-8 tracking-tight">Gulliver Lux Dashboard</span>
+          <span className="text-base font-semibold text-on-surface mr-8 tracking-tight">GL-Dashboard</span>
           {tabs.map((t) => (
             <button
               key={t.id}

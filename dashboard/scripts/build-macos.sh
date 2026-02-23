@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build macOS .app bundle for Gulliver Lux Dashboard
+# Build macOS .app bundle for GL-Dashboard
 # Run from dashboard/ directory: bash scripts/build-macos.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DASHBOARD_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-APP_NAME="Gulliver Lux"
+APP_NAME="GL-Dashboard"
 DIST_DIR="$DASHBOARD_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
@@ -69,11 +69,11 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>Gulliver Lux</string>
+  <string>GL-Dashboard</string>
   <key>CFBundleDisplayName</key>
-  <string>Gulliver Lux Dashboard</string>
+  <string>GL-Dashboard</string>
   <key>CFBundleIdentifier</key>
-  <string>com.gulliverlux.dashboard</string>
+  <string>com.gl-dashboard.app</string>
   <key>CFBundleVersion</key>
   <string>1.0.0</string>
   <key>CFBundleShortVersionString</key>
@@ -97,7 +97,7 @@ echo "Creating launcher script..."
 cat > "$MACOS_DIR/launcher" << 'LAUNCHER'
 #!/bin/bash
 
-# Gulliver Lux Dashboard launcher
+# GL-Dashboard launcher
 # This script is the entry point when the .app is double-clicked.
 
 # --- Resolve paths ---
@@ -117,7 +117,7 @@ for p in /usr/local/bin /opt/homebrew/bin "$HOME/.nvm/versions/node"/*/bin; do
 done
 
 if ! command -v node &>/dev/null; then
-  osascript -e 'display alert "Node.js not found" message "Gulliver Lux requires Node.js to run.\n\nPlease install it from https://nodejs.org or via Homebrew:\n  brew install node" as critical buttons {"OK"}'
+  osascript -e 'display alert "Node.js not found" message "GL-Dashboard requires Node.js to run.\n\nPlease install it from https://nodejs.org or via Homebrew:\n  brew install node" as critical buttons {"OK"}'
   exit 1
 fi
 
@@ -148,7 +148,7 @@ export NODE_ENV="production"
 
 clear
 echo "========================================"
-echo "  Gulliver Lux Dashboard"
+echo "  GL-Dashboard"
 echo "========================================"
 echo ""
 echo "  Node:    $NODE_VERSION ($NODE_PATH)"

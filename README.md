@@ -1,4 +1,4 @@
-# Gulliver Lux Dashboard
+# GL-Dashboard
 
 A local dashboard for managing Gulliver Lux's banking transactions and cash flow reporting.
 
