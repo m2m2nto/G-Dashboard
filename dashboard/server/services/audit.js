@@ -1,6 +1,7 @@
 import { readFile, readdir, appendFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { getDataDir } from '../config.js';
+import { getActiveUser } from './project.js';
 
 // Audit data lives inside the project folder's .gl-data directory
 function getAuditDir() {
@@ -18,7 +19,8 @@ export async function appendEntry(entry) {
   const now = new Date();
   const { dir, file } = dayPath(now);
   await mkdir(dir, { recursive: true });
-  const line = JSON.stringify({ ts: now.toISOString(), ...entry }) + '\n';
+  const user = getActiveUser();
+  const line = JSON.stringify({ ts: now.toISOString(), ...(user ? { user } : {}), ...entry }) + '\n';
   await appendFile(join(dir, file), line, 'utf8');
 }
 

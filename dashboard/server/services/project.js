@@ -8,6 +8,7 @@ const DATA_DIR_NAME = '.gl-data';
 // In-memory state
 let _projectDir = null;
 let _manifest = null;
+let _activeUser = null;
 
 export function getProjectDir() {
   return _projectDir;
@@ -198,9 +199,43 @@ export function createProjectV2(dir, { cashFlowFile, transactionFiles }) {
   return manifest;
 }
 
+export function getUsers() {
+  return _manifest?.users || [];
+}
+
+export function addUser(name) {
+  if (!_manifest) throw new Error('No project open');
+  if (!name || typeof name !== 'string') throw new Error('User name is required');
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('User name is required');
+  if (!_manifest.users) _manifest.users = [];
+  if (_manifest.users.includes(trimmed)) throw new Error('User already exists');
+  _manifest.users.push(trimmed);
+  writeManifest(_projectDir, _manifest);
+  // Auto-select the new user if none is active
+  if (!_activeUser) _activeUser = trimmed;
+  return _manifest.users;
+}
+
+export function getActiveUser() {
+  return _activeUser;
+}
+
+export function setActiveUser(name) {
+  if (!name) {
+    _activeUser = null;
+    return null;
+  }
+  const users = getUsers();
+  if (!users.includes(name)) throw new Error('User not found');
+  _activeUser = name;
+  return _activeUser;
+}
+
 export function closeProject() {
   _projectDir = null;
   _manifest = null;
+  _activeUser = null;
   // Remove lastProjectDir but keep other settings
   updateSettings({ lastProjectDir: undefined });
 }

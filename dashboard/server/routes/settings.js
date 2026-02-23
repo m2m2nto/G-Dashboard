@@ -13,6 +13,10 @@ import {
   isValidProject,
   manifestVersion,
   getManifest,
+  getUsers,
+  addUser,
+  getActiveUser,
+  setActiveUser,
 } from '../services/project.js';
 import { detectFilesInDir, detectFileType, buildProposal } from '../services/detect.js';
 
@@ -270,6 +274,32 @@ router.post('/reset', (req, res) => {
     hasProject: false,
     projectDir: null,
   });
+});
+
+// --- User management ---
+
+router.get('/users', (req, res) => {
+  res.json({ users: getUsers(), activeUser: getActiveUser() });
+});
+
+router.post('/users', (req, res) => {
+  const { name } = req.body;
+  try {
+    const users = addUser(name);
+    res.json({ users, activeUser: getActiveUser() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/users/active', (req, res) => {
+  const { name } = req.body;
+  try {
+    const activeUser = setActiveUser(name);
+    res.json({ activeUser });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 export default router;

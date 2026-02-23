@@ -135,3 +135,19 @@ export const browseDir = (path) =>
 
 export const browseFiles = (path) =>
   request(`/settings/browse-files${path ? `?path=${encodeURIComponent(path)}` : ''}`);
+
+export const getUsers = () => request('/settings/users');
+
+export const addUser = (name) =>
+  request('/settings/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+
+export const setActiveUser = (name) =>
+  request('/settings/users/active', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });

@@ -49,11 +49,15 @@ router.put('/elements/:name/category', async (req, res) => {
     }
     const details = await readElementsDetail();
     const before = details.find((el) => el.name === req.params.name);
+    const oldCategory = before?.category ?? null;
+    const newCategory = category || null;
     const result = await updateElementCategory(req.params.name, category);
-    appendEntry({
-      action: 'element.category',
-      details: { element: req.params.name, from: before?.category ?? null, to: category || null },
-    }).catch(() => {});
+    if (oldCategory !== newCategory) {
+      appendEntry({
+        action: 'element.category',
+        details: { element: req.params.name, from: oldCategory, to: newCategory },
+      }).catch(() => {});
+    }
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

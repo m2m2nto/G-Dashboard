@@ -92,6 +92,11 @@ export default function ActivityLog({ entries, loading }) {
             <span className="text-xs text-on-surface-tertiary w-28 shrink-0 pt-0.5 tabular-nums">
               {timeFormat.format(new Date(entry.ts))}
             </span>
+            {entry.user && (
+              <span className="inline-flex items-center rounded-full bg-surface-dim px-2 py-0.5 text-xs font-medium text-on-surface-secondary shrink-0">
+                {entry.user}
+              </span>
+            )}
             <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0 ${badge.color}`}>
               {badge.label}
             </span>

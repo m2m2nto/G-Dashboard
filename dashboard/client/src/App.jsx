@@ -7,6 +7,7 @@ import CashFlowGrid from './components/CashFlowGrid.jsx';
 import ElementsTable from './components/ElementsTable.jsx';
 import ChartsView from './components/ChartsView.jsx';
 import ActivityLog from './components/ActivityLog.jsx';
+import UserSwitcher from './components/UserSwitcher.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
 import WelcomeSetup from './components/WelcomeSetup.jsx';
 import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE, BUTTON_ICON } from './ui.js';
@@ -29,6 +30,9 @@ import {
   getYearlySummary,
   getYoYQoQ,
   getSettings,
+  getUsers,
+  addUser as apiAddUser,
+  setActiveUser as apiSetActiveUser,
 } from './api.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
@@ -64,6 +68,8 @@ export default function App() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(null); // null = loading, true/false
+  const [users, setUsers] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
 
   const pushToast = useCallback((type, text) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -91,13 +97,21 @@ export default function App() {
       .catch(() => setNeedsSetup(false));
   }, []);
 
+  const loadUsers = useCallback(() => {
+    getUsers().then(({ users: u, activeUser }) => {
+      setUsers(u || []);
+      setCurrentUser(activeUser || null);
+    }).catch(() => {});
+  }, []);
+
   const initApp = useCallback(() => {
     getCategories().then(setCategories).catch((e) => pushToast('error', 'Failed to load categories: ' + e.message));
     getElements().then(setElements).catch((e) => pushToast('error', 'Failed to load elements: ' + e.message));
     getCategoryHints().then(setCategoryHints).catch(() => {});
     getCashFlowYears().then(setCfYears).catch((e) => pushToast('error', 'Failed to load years: ' + e.message));
     getTransactionYears().then(setTxYears).catch((e) => pushToast('error', 'Failed to load transaction years: ' + e.message));
-  }, [pushToast]);
+    loadUsers();
+  }, [pushToast, loadUsers]);
 
   useEffect(() => {
     if (needsSetup === false) initApp();
@@ -368,13 +382,28 @@ export default function App() {
               )}
             </button>
           ))}
-          <button
-            onClick={() => setShowSettings(true)}
-            className={`${BUTTON_ICON} ml-auto`}
-            title="Settings"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>settings</span>
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <UserSwitcher
+              users={users}
+              currentUser={currentUser}
+              onSwitch={async (name) => {
+                await apiSetActiveUser(name);
+                setCurrentUser(name);
+              }}
+              onAdd={async (name) => {
+                const { users: u, activeUser } = await apiAddUser(name);
+                setUsers(u);
+                setCurrentUser(activeUser);
+              }}
+            />
+            <button
+              onClick={() => setShowSettings(true)}
+              className={BUTTON_ICON}
+              title="Settings"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>settings</span>
+            </button>
+          </div>
         </div>
       </nav>
 
