@@ -1,12 +1,30 @@
 # Gulliver Lux Dashboard
 
-Local dashboard for reviewing and maintaining the Gulliver Lux banking transactions and cash flow workbooks.
+A local dashboard for managing Gulliver Lux's banking transactions and cash flow reporting.
+
+> **Note:** This is an experimental project, built as a personal productivity tool rather than a production-grade application.
+
+## Context
+
+Managing financial reporting through Excel spreadsheets gets complex fast — keeping data consistent across workbooks, avoiding manual errors, and maintaining a clear picture of cash flow all become harder as the volume of transactions grows.
+
+The common (and arguably most reasonable) approach would be to move everything into a database. Instead, this project takes a different route: **the Excel spreadsheets remain the single source of truth**. The dashboard reads from and writes to them directly, adding a layer of validation and consistency on top without replacing the underlying format.
+
+This choice is deliberate:
+
+- **Retro-compatibility** — If the data ever needs to be shared with someone who doesn't use the dashboard, the Excel files are still perfectly usable on their own. No export step, no data migration.
+- **Shared access via OneDrive/Teams** — The spreadsheets are already shared between parties through Microsoft's collaboration tools. Keeping Excel as the format means the existing sharing workflow stays untouched.
+- **Independence** — The dashboard is a single-user tool. It helps me manage and report on the data without requiring anyone else to adopt it.
+
+In short: the dashboard exists to make working with the spreadsheets faster and more reliable, not to replace them.
+
+The app is also packaged as a **native macOS application** (via Electron), so it can run as a standalone desktop app without needing a browser or a terminal.
 
 ## Overview
 
 - Backend (Node/Express) reads and writes to the Excel files in the repo root.
 - Frontend (Vite/React) provides the UI for transactions, cash flow, and elements.
-- Cash flow sync writes directly into the Cash Flow workbook while preserving Excel structure.
+- Cash flow sync writes directly into the Cash Flow workbook while preserving Excel structure (formulas, charts, table ranges).
 
 ## Stack
 
