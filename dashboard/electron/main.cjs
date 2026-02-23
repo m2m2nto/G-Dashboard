@@ -125,6 +125,16 @@ ipcMain.handle('dialog:openDirectory', async () => {
   return filePaths[0];
 });
 
+ipcMain.handle('dialog:openFile', async (_event, options = {}) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    title: options.title || 'Select File',
+    filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+  });
+  if (canceled || filePaths.length === 0) return null;
+  return filePaths[0];
+});
+
 // ── App lifecycle ────────────────────────────────────────────────────
 
 app.on('ready', async () => {
