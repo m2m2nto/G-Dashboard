@@ -1,0 +1,25 @@
+{
+  "name": "gulliver-lux-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "main": "electron/main.cjs",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "electron:dev": "electron .",
+    "electron:build": "bash scripts/build-electron.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "electron": "^35.1.2",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}

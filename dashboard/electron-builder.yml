@@ -1,0 +1,41 @@
+appId: com.gulliverlux.dashboard
+productName: Gulliver Lux
+
+directories:
+  output: dist/electron
+
+# What goes into Resources/app/ (the main Electron package)
+files:
+  - electron/main.cjs
+  - electron/preload.cjs
+  - package.json
+
+# asar must be false — fork() needs real filesystem paths
+asar: false
+
+# Extra resources copied into Resources/ (alongside app/)
+extraResources:
+  # Server code
+  - from: server/index.js
+    to: server/index.js
+  - from: server/config.js
+    to: server/config.js
+  - from: server/routes
+    to: server/routes
+  - from: server/services
+    to: server/services
+  - from: server/package.json
+    to: server/package.json
+  # Server production dependencies (staged by build script)
+  - from: .electron-staging/node_modules
+    to: node_modules
+  # Built client
+  - from: client/dist
+    to: public
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.finance
+  icon: build/icon.icns

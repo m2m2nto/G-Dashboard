@@ -1,0 +1,8 @@
+# .claudeignore
+
+.env*
+**/application*.properties
+**/application*.yml
+**/credentials/**
+**/*.pem
+**/*.key

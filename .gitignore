@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Test output
+test-results/
+
+# Mac
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+*.iws
+.vscode/
+
+# Environment
+.env*
+
+# Claude Code local settings
+.claude/
+
+# Financial data (sensitive, binary)
+*.xlsx
+Banking transactions/
+
+# Local app data
+.gulliver-data/
