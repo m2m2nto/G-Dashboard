@@ -1,47 +1,92 @@
-import { resolve, dirname } from 'path';
+import { resolve, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { readdir, access } from 'fs/promises';
-import { getSettings } from './services/settings.js';
+import {
+  bootstrap,
+  getProjectDir,
+  getManifest,
+  resolvePath,
+  toManifestPath,
+  writeManifest,
+} from './services/project.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Default data directory: env var or repo root (two levels up from server/)
 const DEFAULT_DATA_DIR = process.env.GULLIVER_DATA_DIR || resolve(__dirname, '../..');
 
-// Bootstrap: read persisted setting synchronously at module load
-let _dataDir = getSettings().dataDir || DEFAULT_DATA_DIR;
+// Bootstrap project on import
+bootstrap();
 
 export function getDataDir() {
-  return _dataDir;
+  return getProjectDir() || DEFAULT_DATA_DIR;
 }
 
-export function setDataDir(dir) {
-  _dataDir = dir;
+export function hasProject() {
+  return !!getProjectDir();
 }
 
-export function getDefaultDataDir() {
-  return DEFAULT_DATA_DIR;
+export function getFilePaths() {
+  const manifest = getManifest();
+  if (manifest) {
+    return {
+      bankingFile: resolvePath(manifest.bankingFile),
+      cashFlowFile: resolvePath(manifest.cashFlowFile),
+      archiveDir: resolvePath(manifest.archiveDir),
+    };
+  }
+  // Fallback for no-project state (shouldn't be reached in normal flow)
+  return {
+    bankingFile: resolve(DEFAULT_DATA_DIR, 'Banking transactions - Gulliver Lux 2026.xlsx'),
+    cashFlowFile: resolve(DEFAULT_DATA_DIR, 'Cash Flow Gulliver Lux.xlsx'),
+    archiveDir: resolve(DEFAULT_DATA_DIR, 'Banking transactions'),
+  };
+}
+
+export function setFilePaths({ bankingFile, cashFlowFile, archiveDir }) {
+  const projectDir = getProjectDir();
+  if (!projectDir) return;
+  const manifest = getManifest() || {};
+  if (bankingFile !== undefined) manifest.bankingFile = toManifestPath(bankingFile);
+  if (cashFlowFile !== undefined) manifest.cashFlowFile = toManifestPath(cashFlowFile);
+  if (archiveDir !== undefined) manifest.archiveDir = toManifestPath(archiveDir);
+  writeManifest(projectDir, manifest);
+}
+
+export function getDefaultFilePaths() {
+  const dir = getProjectDir() || DEFAULT_DATA_DIR;
+  return {
+    bankingFile: resolve(dir, 'Banking transactions - Gulliver Lux 2026.xlsx'),
+    cashFlowFile: resolve(dir, 'Cash Flow Gulliver Lux.xlsx'),
+    archiveDir: resolve(dir, 'Banking transactions'),
+  };
 }
 
 export function getBankingFile(year) {
-  const dir = getDataDir();
   const y = String(year);
-  if (y === '2026') return resolve(dir, 'Banking transactions - Gulliver Lux 2026.xlsx');
-  return resolve(dir, `Banking transactions/Banking transactions - Gulliver Lux ${y}.xlsx`);
+  const paths = getFilePaths();
+  const currentName = basename(paths.bankingFile);
+  const currentMatch = currentName.match(/(\d{4})\.xlsx$/);
+  const currentYear = currentMatch ? currentMatch[1] : '2026';
+
+  if (y === currentYear) return paths.bankingFile;
+  // Look in archive directory for other years
+  return resolve(paths.archiveDir, `Banking transactions - Gulliver Lux ${y}.xlsx`);
 }
 
 export async function listBankingYears() {
-  const dir = getDataDir();
   const years = [];
-  // Check root-level 2026 file
+  const paths = getFilePaths();
+  // Check the primary banking file
   try {
-    await access(resolve(dir, 'Banking transactions - Gulliver Lux 2026.xlsx'));
-    years.push('2026');
+    await access(paths.bankingFile);
+    const name = basename(paths.bankingFile);
+    const m = name.match(/(\d{4})\.xlsx$/);
+    if (m) years.push(m[1]);
   } catch {}
-  // Check Banking transactions/ directory
-  const subdir = resolve(dir, 'Banking transactions');
+  // Check archive directory
   try {
-    const files = await readdir(subdir);
+    const files = await readdir(paths.archiveDir);
     for (const f of files) {
       const m = f.match(/Banking transactions - Gulliver Lux (\d{4})\.xlsx$/);
       if (m && !years.includes(m[1])) years.push(m[1]);
@@ -51,7 +96,7 @@ export async function listBankingYears() {
 }
 
 export function getCashFlowFile() {
-  return resolve(getDataDir(), 'Cash Flow Gulliver Lux.xlsx');
+  return getFilePaths().cashFlowFile;
 }
 
 export const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];

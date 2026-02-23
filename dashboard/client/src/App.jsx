@@ -64,7 +64,6 @@ export default function App() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(null); // null = loading, true/false
-  const [setupDir, setSetupDir] = useState('');
 
   const pushToast = useCallback((type, text) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -74,16 +73,19 @@ export default function App() {
     }, 4000);
   }, []);
 
-  // Check on mount whether the data directory has Excel files
+  // Check on mount whether a project is open and data files exist
   useEffect(() => {
     getSettings()
       .then((s) => {
-        setSetupDir(s.dataDir);
-        const fs = s.fileStatus;
-        if (!fs || (!fs.banking2026 && !fs.cashFlow)) {
+        if (!s.hasProject) {
           setNeedsSetup(true);
         } else {
-          setNeedsSetup(false);
+          const fs = s.fileStatus;
+          if (!fs || (!fs.bankingFile && !fs.cashFlowFile)) {
+            setNeedsSetup(true);
+          } else {
+            setNeedsSetup(false);
+          }
         }
       })
       .catch(() => setNeedsSetup(false));
@@ -179,7 +181,7 @@ export default function App() {
   }, [tab, loadActivity]);
 
   const handleSettingsSaved = () => {
-    pushToast('success', 'Data directory updated');
+    pushToast('success', 'Settings updated');
     setShowSettings(false);
     // Reload all data
     getCategories().then(setCategories).catch(() => {});
@@ -312,7 +314,6 @@ export default function App() {
   if (needsSetup) {
     return (
       <WelcomeSetup
-        initialDir={setupDir}
         onComplete={() => setNeedsSetup(false)}
       />
     );
@@ -626,6 +627,10 @@ export default function App() {
         open={showSettings}
         onClose={() => setShowSettings(false)}
         onSaved={handleSettingsSaved}
+        onCloseProject={() => {
+          setShowSettings(false);
+          setNeedsSetup(true);
+        }}
       />
     </div>
   );

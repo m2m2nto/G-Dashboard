@@ -2,9 +2,9 @@ import { readFile, readdir, appendFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { getDataDir } from '../config.js';
 
-// Audit data lives alongside the Excel files so it follows the data directory
+// Audit data lives inside the project folder's .gl-data directory
 function getAuditDir() {
-  return join(getDataDir(), '.gulliver-data', 'audit');
+  return join(getDataDir(), '.gl-data', 'audit');
 }
 
 function dayPath(date) {

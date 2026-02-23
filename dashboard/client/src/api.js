@@ -78,15 +78,36 @@ export const getYoYQoQ = () => request('/charts/yoy-qoq');
 
 export const getSettings = () => request('/settings');
 
-export const updateSettings = (dataDir) =>
+export const updateSettings = ({ bankingFile, cashFlowFile, archiveDir }) =>
   request('/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dataDir }),
+    body: JSON.stringify({ bankingFile, cashFlowFile, archiveDir }),
   });
 
 export const resetSettings = () =>
   request('/settings/reset', { method: 'POST' });
+
+export const checkProject = (dir) =>
+  request('/settings/check-project', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  });
+
+export const openProject = (dir) =>
+  request('/settings/open-project', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dir }),
+  });
+
+export const createProject = ({ dir, bankingFile, cashFlowFile, archiveDir }) =>
+  request('/settings/create-project', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dir, bankingFile, cashFlowFile, archiveDir }),
+  });
 
 export const checkDir = (path) =>
   request('/settings/check-dir', {
@@ -95,5 +116,15 @@ export const checkDir = (path) =>
     body: JSON.stringify({ path }),
   });
 
+export const checkFile = (path) =>
+  request('/settings/check-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+
 export const browseDir = (path) =>
   request(`/settings/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`);
+
+export const browseFiles = (path) =>
+  request(`/settings/browse-files${path ? `?path=${encodeURIComponent(path)}` : ''}`);
