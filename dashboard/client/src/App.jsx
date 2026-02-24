@@ -68,6 +68,7 @@ export default function App() {
   const [elementsQuery, setElementsQuery] = useState('');
   const [txFilters, setTxFilters] = useState([]);
   const [elementsFilters, setElementsFilters] = useState([]);
+  const [cfSubTab, setCfSubTab] = useState('cashflow');
   const [showYoY, setShowYoY] = useState(true);
   const [chartsYearly, setChartsYearly] = useState(null);
   const [chartsYoYQoQ, setChartsYoYQoQ] = useState(null);
@@ -184,8 +185,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (tab === 'elements') loadElements();
-  }, [tab, loadElements]);
+    if (tab === 'cashflow' && cfSubTab === 'elements') loadElements();
+  }, [tab, cfSubTab, loadElements]);
 
   const loadCharts = useCallback(async () => {
     setChartsLoading(true);
@@ -231,7 +232,7 @@ export default function App() {
     if (tab === 'transactions') loadTransactions();
     if (tab === 'cashflow') loadCashFlow();
     if (tab === 'budget') loadBudget();
-    if (tab === 'elements') loadElements();
+    if (tab === 'cashflow' && cfSubTab === 'elements') loadElements();
     if (tab === 'charts') loadCharts();
     if (tab === 'activity') loadActivity();
   };
@@ -282,7 +283,6 @@ export default function App() {
     { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
     { id: 'cashflow', label: 'Cash Flow', icon: 'monitoring' },
     { id: 'budget', label: 'Budget', icon: 'account_balance' },
-    { id: 'elements', label: 'Elements', icon: 'category' },
     { id: 'charts', label: 'Charts', icon: 'bar_chart' },
     { id: 'activity', label: 'Activity', icon: 'history' },
   ];
@@ -556,14 +556,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Cash Flow tab */}
+        {/* Cash Flow tab (with Elements sub-tab) */}
         {tab === 'cashflow' && (
           <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
             {/* Toolbar */}
             <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <YearSelector years={cfYears} selected={cfYear} onChange={setCfYear} />
-                {cfLoading && (
+                {cfSubTab === 'cashflow' && cfLoading && (
                   <span className="text-sm text-on-surface-secondary flex items-center gap-2">
                     <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -572,22 +572,102 @@ export default function App() {
                     Syncing...
                   </span>
                 )}
+                {cfSubTab === 'elements' && !elementsLoading && (
+                  <span className="text-sm text-on-surface-secondary">
+                    {elementsSearch
+                      ? `Showing ${finalElements.length} of ${elementsDetail.length}`
+                      : `${elementsDetail.length} elements`}
+                  </span>
+                )}
               </div>
-              {cashFlow?.hasYoY && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {cfSubTab === 'cashflow' && cashFlow?.hasYoY && (
+                  <button
+                    onClick={() => setShowYoY((v) => !v)}
+                    className={`${BUTTON_PILL_BASE} shrink-0 ${
+                      showYoY
+                        ? 'bg-primary-light text-primary border-primary/30'
+                        : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+                    }`}
+                  >
+                    {showYoY && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
+                    {showYoY ? 'YoY Comparison' : 'Show YoY'}
+                  </button>
+                )}
+                {cfSubTab === 'elements' && (
+                  <div className="relative w-56">
+                    <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
+                    <input
+                      type="search"
+                      value={elementsQuery}
+                      onChange={(e) => setElementsQuery(e.target.value)}
+                      placeholder="Search elements..."
+                      className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                )}
                 <button
-                  onClick={() => setShowYoY((v) => !v)}
+                  onClick={() => setCfSubTab(cfSubTab === 'elements' ? 'cashflow' : 'elements')}
                   className={`${BUTTON_PILL_BASE} shrink-0 ${
-                    showYoY
+                    cfSubTab === 'elements'
                       ? 'bg-primary-light text-primary border-primary/30'
                       : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
                   }`}
                 >
-                  {showYoY && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
-                  {showYoY ? 'YoY Comparison' : 'Show YoY'}
+                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>category</span>
+                  Categories
                 </button>
-              )}
+              </div>
             </div>
-            <CashFlowGrid data={cashFlow} showYoY={showYoY} year={cfYear} />
+            {cfSubTab === 'elements' && (
+              <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
+                {elementsFilterDefs.map((filter) => {
+                  const isActive = elementsFilters.includes(filter.id);
+                  return (
+                    <button
+                      key={filter.id}
+                      onClick={() =>
+                        setElementsFilters((prev) =>
+                          isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
+                        )
+                      }
+                      className={`${BUTTON_PILL_BASE} ${
+                        isActive
+                          ? 'bg-primary-light text-primary border-primary/30'
+                          : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+                      }`}
+                    >
+                      {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
+                      {filter.label}
+                    </button>
+                  );
+                })}
+                {(elementsFilters.length > 0 || elementsQuery) && (
+                  <button
+                    onClick={() => {
+                      setElementsFilters([]);
+                      setElementsQuery('');
+                    }}
+                    className={BUTTON_GHOST}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+            {cfSubTab === 'cashflow' && (
+              <CashFlowGrid data={cashFlow} showYoY={showYoY} year={cfYear} />
+            )}
+            {cfSubTab === 'elements' && (
+              <ElementsTable
+                elements={finalElements}
+                loading={elementsLoading}
+                categories={categories}
+                onUpdateCategory={handleUpdateElementCategory}
+                onToast={pushToast}
+              />
+            )}
           </div>
         )}
 
@@ -631,75 +711,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Elements tab */}
-        {tab === 'elements' && (
-          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between">
-              <span className="text-sm text-on-surface-secondary">
-                {!elementsLoading && (
-                  <>
-                    {elementsSearch
-                      ? `Showing ${finalElements.length} of ${elementsDetail.length}`
-                      : `${elementsDetail.length} elements`}
-                  </>
-                )}
-              </span>
-              <div className="relative w-56">
-                <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
-                <input
-                  type="search"
-                  value={elementsQuery}
-                  onChange={(e) => setElementsQuery(e.target.value)}
-                  placeholder="Search elements..."
-                  className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
-            </div>
-            {/* Filter chips */}
-            <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
-              {elementsFilterDefs.map((filter) => {
-                const isActive = elementsFilters.includes(filter.id);
-                return (
-                  <button
-                    key={filter.id}
-                    onClick={() =>
-                      setElementsFilters((prev) =>
-                        isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
-                      )
-                    }
-                    className={`${BUTTON_PILL_BASE} ${
-                      isActive
-                        ? 'bg-primary-light text-primary border-primary/30'
-                        : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-                    }`}
-                  >
-                    {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
-                    {filter.label}
-                  </button>
-                );
-              })}
-              {(elementsFilters.length > 0 || elementsQuery) && (
-                <button
-                  onClick={() => {
-                    setElementsFilters([]);
-                    setElementsQuery('');
-                  }}
-                  className={BUTTON_GHOST}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
-                  Clear
-                </button>
-              )}
-            </div>
-            <ElementsTable
-              elements={finalElements}
-              loading={elementsLoading}
-              categories={categories}
-              onUpdateCategory={handleUpdateElementCategory}
-              onToast={pushToast}
-            />
-          </div>
-        )}
+
 
       </main>
 
