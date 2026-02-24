@@ -3,18 +3,19 @@ import { BUTTON_ICON } from '../ui.js';
 export default function YearSelector({ years, selected, onChange }) {
   const idx = years.indexOf(selected);
 
+  // years array is descending (2026, 2025, …), so left = higher index, right = lower index
   const goPrev = () => {
-    if (idx > 0) onChange(years[idx - 1]);
+    if (idx < years.length - 1) onChange(years[idx + 1]);
   };
   const goNext = () => {
-    if (idx < years.length - 1) onChange(years[idx + 1]);
+    if (idx > 0) onChange(years[idx - 1]);
   };
 
   return (
     <div className="inline-flex items-center gap-0.5">
       <button
         onClick={goPrev}
-        disabled={idx <= 0}
+        disabled={idx >= years.length - 1}
         className={BUTTON_ICON}
         aria-label="Previous year"
       >
@@ -31,7 +32,7 @@ export default function YearSelector({ years, selected, onChange }) {
       </select>
       <button
         onClick={goNext}
-        disabled={idx >= years.length - 1}
+        disabled={idx <= 0}
         className={BUTTON_ICON}
         aria-label="Next year"
       >

@@ -43,6 +43,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
   const [projectDir, setProjectDir] = useState('');
   const [bankingFile, setBankingFile] = useState('');
   const [cashFlowFile, setCashFlowFile] = useState('');
+  const [budgetFile, setBudgetFile] = useState('');
   const [archiveDir, setArchiveDir] = useState('');
   const [transactionFiles, setTransactionFiles] = useState({});
   const [txFileStatus, setTxFileStatus] = useState({});
@@ -60,6 +61,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
       setProjectDir(s.projectDir || '');
       setBankingFile(s.bankingFile || '');
       setCashFlowFile(s.cashFlowFile || '');
+      setBudgetFile(s.budgetFile || '');
       setArchiveDir(s.archiveDir || '');
       setTransactionFiles(s.transactionFiles || {});
       setTxFileStatus(s.transactionFileStatus || {});
@@ -67,6 +69,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
       setOrigPaths({
         bankingFile: s.bankingFile,
         cashFlowFile: s.cashFlowFile,
+        budgetFile: s.budgetFile,
         archiveDir: s.archiveDir,
         transactionFiles: s.transactionFiles || {},
       });
@@ -94,6 +97,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
 
   const dirty = isV2
     ? cashFlowFile !== origPaths.cashFlowFile ||
+      budgetFile !== origPaths.budgetFile ||
       JSON.stringify(transactionFiles) !== JSON.stringify(origPaths.transactionFiles)
     : bankingFile !== origPaths.bankingFile ||
       cashFlowFile !== origPaths.cashFlowFile ||
@@ -130,6 +134,18 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
       }
     } else {
       setPicker('cashflow');
+    }
+  };
+
+  const handleBrowseBudget = async () => {
+    if (isElectron) {
+      const file = await window.electronAPI.selectFile({ title: 'Select Budget File' });
+      if (file) {
+        setBudgetFile(file);
+        verifyFile(file, 'budgetFile');
+      }
+    } else {
+      setPicker('budget');
     }
   };
 
@@ -217,6 +233,9 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
     } else if (field === 'cashflow') {
       setCashFlowFile(filePath);
       verifyFile(filePath, 'cashFlowFile');
+    } else if (field === 'budget') {
+      setBudgetFile(filePath);
+      verifyFile(filePath, 'budgetFile');
     }
   };
 
@@ -230,12 +249,12 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
     setSaving(true);
     try {
       const payload = isV2
-        ? { cashFlowFile, transactionFiles }
+        ? { cashFlowFile, budgetFile, transactionFiles }
         : { bankingFile, cashFlowFile, archiveDir };
       const result = await updateSettings(payload);
       setFileStatus(result.fileStatus);
       if (isV2) {
-        setOrigPaths({ cashFlowFile: result.cashFlowFile, transactionFiles: result.transactionFiles || {} });
+        setOrigPaths({ cashFlowFile: result.cashFlowFile, budgetFile: result.budgetFile, transactionFiles: result.transactionFiles || {} });
       } else {
         setOrigPaths({ bankingFile: result.bankingFile, cashFlowFile: result.cashFlowFile, archiveDir: result.archiveDir });
       }
@@ -293,6 +312,19 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
             onBrowse={handleBrowseCashFlow}
             checking={checking.cashFlowFile}
           />
+
+          {/* Budget File (v2 only) */}
+          {isV2 && (
+            <FileSection
+              icon="account_balance"
+              label="Budget File"
+              description="The Excel file with the Consuntivo BUDGET sheet."
+              path={budgetFile}
+              status={fileStatus.budgetFile}
+              onBrowse={handleBrowseBudget}
+              checking={checking.budgetFile}
+            />
+          )}
 
           {isV2 ? (
             /* v2: Transaction files by year */
@@ -393,6 +425,13 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
         <FilePicker
           initial={cashFlowFile}
           onSelect={handleFileSelect('cashflow')}
+          onCancel={() => setPicker(null)}
+        />
+      )}
+      {picker === 'budget' && (
+        <FilePicker
+          initial={budgetFile || projectDir}
+          onSelect={handleFileSelect('budget')}
           onCancel={() => setPicker(null)}
         />
       )}

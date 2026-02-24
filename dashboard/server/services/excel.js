@@ -9,8 +9,17 @@ import {
   CATEGORY_TO_CF_ROW,
   getBankingFile,
   getCashFlowFile,
+  getBudgetFile,
   listBankingYears,
   registerTransactionFile,
+  BUDGET_SHEET_NAME,
+  BUDGET_NAME_COL,
+  BUDGET_YEAR_CONFIGS,
+  BUDGET_COST_ROWS,
+  BUDGET_REVENUE_ROWS,
+  BUDGET_TOTAL_COSTS_ROW,
+  BUDGET_TOTAL_REVENUES_ROW,
+  BUDGET_MARGIN_ROW,
 } from '../config.js';
 
 // ---------------------------------------------------------------------------
@@ -1418,5 +1427,136 @@ export function syncAllCashFlow(monthsToSync = MONTHS, year) {
   const output = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 9 } });
   await writeFile(cfFile, output);
   return results;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Budget (READ — exceljs, "Consuntivo BUDGET" sheet)
+// ---------------------------------------------------------------------------
+
+export async function readBudget(year) {
+  const filePath = getBudgetFile();
+  if (!filePath) throw new Error('Budget file not configured');
+  const y = Number(year);
+  const yearCfg = BUDGET_YEAR_CONFIGS[y];
+  if (!yearCfg) throw new Error(`No budget data for year ${year}`);
+  const { baseCol } = yearCfg;
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(filePath);
+  const ws = wb.getWorksheet(BUDGET_SHEET_NAME);
+  if (!ws) throw new Error(`Sheet "${BUDGET_SHEET_NAME}" not found`);
+
+  function readRowData(row) {
+    const months = {};
+    for (let m = 0; m < 12; m++) {
+      const budgetCol = baseCol + m * 3;
+      const actualCol = budgetCol + 1;
+      const diffCol = budgetCol + 2;
+      const budget = cellValue(ws.getRow(row).getCell(budgetCol));
+      const actual = cellValue(ws.getRow(row).getCell(actualCol));
+      const diff = cellValue(ws.getRow(row).getCell(diffCol));
+      months[MONTHS[m]] = {
+        budget: budget != null ? Number(budget) || 0 : 0,
+        actual: actual != null ? Number(actual) || 0 : 0,
+        diff: diff != null ? Number(diff) || 0 : 0,
+      };
+    }
+    // Totals: baseCol + 36/37/38
+    const totalBudget = cellValue(ws.getRow(row).getCell(baseCol + 36));
+    const totalActual = cellValue(ws.getRow(row).getCell(baseCol + 37));
+    const totalDiff = cellValue(ws.getRow(row).getCell(baseCol + 38));
+    return {
+      months,
+      total: {
+        budget: totalBudget != null ? Number(totalBudget) || 0 : 0,
+        actual: totalActual != null ? Number(totalActual) || 0 : 0,
+        diff: totalDiff != null ? Number(totalDiff) || 0 : 0,
+      },
+    };
+  }
+
+  // Category names always in col B (shared across all years)
+  const costs = [];
+  for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
+    const category = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL)) || '';
+    if (!category) continue;
+    costs.push({ category, row: r, ...readRowData(r) });
+  }
+
+  const revenues = [];
+  for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
+    const category = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL)) || '';
+    if (!category) continue;
+    revenues.push({ category, row: r, ...readRowData(r) });
+  }
+
+  const totals = {
+    totalCosts: readRowData(BUDGET_TOTAL_COSTS_ROW),
+    totalRevenues: readRowData(BUDGET_TOTAL_REVENUES_ROW),
+    margin: readRowData(BUDGET_MARGIN_ROW),
+  };
+
+  return { year: y, costs, revenues, totals };
+}
+
+export async function listBudgetYears() {
+  const filePath = getBudgetFile();
+  if (!filePath) return [];
+  try {
+    await access(filePath);
+  } catch {
+    return [];
+  }
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(filePath);
+  const ws = wb.getWorksheet(BUDGET_SHEET_NAME);
+  if (!ws) return [];
+
+  const years = [];
+  for (const [yearStr, cfg] of Object.entries(BUDGET_YEAR_CONFIGS)) {
+    // Check if the year label appears in its designated column at row 2
+    const label = cellValue(ws.getRow(2).getCell(cfg.yearLabelCol));
+    if (label != null) {
+      years.push(yearStr);
+    }
+  }
+  return years.sort().reverse();
+}
+
+// ---------------------------------------------------------------------------
+// Budget (WRITE — xlsx-populate, single cell update)
+// ---------------------------------------------------------------------------
+
+const BUDGET_FORMULA_ROWS = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
+
+export function updateBudgetCell(year, row, monthIndex, field, value) {
+  const filePath = getBudgetFile();
+  if (!filePath) throw new Error('Budget file not configured');
+  const y = Number(year);
+  const yearCfg = BUDGET_YEAR_CONFIGS[y];
+  if (!yearCfg) throw new Error(`No budget config for year ${year}`);
+
+  if (BUDGET_FORMULA_ROWS.includes(row)) {
+    throw new Error(`Row ${row} is a formula/total row and cannot be edited`);
+  }
+  if (field !== 'budget' && field !== 'actual') {
+    throw new Error(`Invalid field "${field}" — must be "budget" or "actual"`);
+  }
+  if (monthIndex < 0 || monthIndex > 11) {
+    throw new Error(`Invalid monthIndex ${monthIndex}`);
+  }
+
+  const { baseCol } = yearCfg;
+  const col = baseCol + monthIndex * 3 + (field === 'actual' ? 1 : 0);
+
+  return withLock(filePath, async () => {
+    const wb = await XlsxPopulate.fromFileAsync(filePath);
+    const ws = wb.sheet(BUDGET_SHEET_NAME);
+    if (!ws) throw new Error(`Sheet "${BUDGET_SHEET_NAME}" not found`);
+    ws.cell(row, col).value(value != null && value !== '' ? Number(value) : undefined);
+    await wb.toFileAsync(filePath);
+    return { row, monthIndex, field, value };
   });
 }

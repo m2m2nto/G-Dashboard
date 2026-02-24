@@ -76,13 +76,24 @@ export const getYearlySummary = () => request('/charts/yearly');
 
 export const getYoYQoQ = () => request('/charts/yoy-qoq');
 
+export const getBudget = (year) => request(`/budget/${year}`);
+
+export const getBudgetYears = () => request('/budget/years');
+
+export const updateBudgetCell = (year, row, monthIndex, field, value) =>
+  request(`/budget/${year}/cell`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ row, monthIndex, field, value }),
+  });
+
 export const getSettings = () => request('/settings');
 
-export const updateSettings = ({ bankingFile, cashFlowFile, archiveDir, transactionFiles }) =>
+export const updateSettings = ({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles }) =>
   request('/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bankingFile, cashFlowFile, archiveDir, transactionFiles }),
+    body: JSON.stringify({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles }),
   });
 
 export const resetSettings = () =>

@@ -53,6 +53,7 @@ export function getFilePaths() {
     return {
       bankingFile,
       cashFlowFile: resolvePath(manifest.cashFlowFile),
+      budgetFile: manifest.budgetFile ? resolvePath(manifest.budgetFile) : null,
       transactionFiles: resolvedTxFiles,
     };
   }
@@ -66,13 +67,14 @@ export function getFilePaths() {
   };
 }
 
-export function setFilePaths({ bankingFile, cashFlowFile, archiveDir, transactionFiles }) {
+export function setFilePaths({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles }) {
   const projectDir = getProjectDir();
   if (!projectDir) return;
   const manifest = getManifest() || {};
 
   if (manifestVersion(manifest) === 2) {
     if (cashFlowFile !== undefined) manifest.cashFlowFile = toManifestPath(cashFlowFile);
+    if (budgetFile !== undefined) manifest.budgetFile = budgetFile ? toManifestPath(budgetFile) : undefined;
     if (transactionFiles !== undefined) {
       for (const [year, filePath] of Object.entries(transactionFiles)) {
         manifest.transactionFiles[year] = toManifestPath(filePath);
@@ -191,6 +193,10 @@ export function getCashFlowFile() {
   return getFilePaths().cashFlowFile;
 }
 
+export function getBudgetFile() {
+  return getFilePaths().budgetFile;
+}
+
 export const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
 
 // Month sheet name → Cash Flow column index (B=2 for January, M=13 for December)
@@ -225,3 +231,21 @@ export const CATEGORY_TO_CF_ROW = {
 
 // Rows that contain formulas (TOTALE rows, MARGINE, SALDO) — never overwrite these
 export const CF_FORMULA_ROWS = [16, 26, 31, 34, 36, 39];
+
+// Budget sheet constants ("Consuntivo BUDGET")
+export const BUDGET_SHEET_NAME = 'Consuntivo BUDGET';
+// Category names live in col B (2) for all years
+export const BUDGET_NAME_COL = 2;
+// Year → { baseCol, yearLabelCol }
+// baseCol: first Budget column for January (Budget = baseCol + m*3, Actual = +1, Diff = +2)
+// yearLabelCol: column where the year label appears in row 2
+export const BUDGET_YEAR_CONFIGS = {
+  2026: { baseCol: 3, yearLabelCol: 1 },
+  2027: { baseCol: 43, yearLabelCol: 42 },
+};
+// Cost category rows (3-14) and revenue category rows (19-23)
+export const BUDGET_COST_ROWS = { start: 3, end: 14 };
+export const BUDGET_REVENUE_ROWS = { start: 19, end: 23 };
+export const BUDGET_TOTAL_COSTS_ROW = 16;
+export const BUDGET_TOTAL_REVENUES_ROW = 25;
+export const BUDGET_MARGIN_ROW = 27;

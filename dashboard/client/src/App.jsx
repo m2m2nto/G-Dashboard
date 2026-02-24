@@ -4,6 +4,7 @@ import YearSelector from './components/YearSelector.jsx';
 import TransactionTable from './components/TransactionTable.jsx';
 import TransactionForm from './components/TransactionForm.jsx';
 import CashFlowGrid from './components/CashFlowGrid.jsx';
+import BudgetGrid from './components/BudgetGrid.jsx';
 import ElementsTable from './components/ElementsTable.jsx';
 import ChartsView from './components/ChartsView.jsx';
 import ActivityLog from './components/ActivityLog.jsx';
@@ -20,6 +21,9 @@ import {
   getCashFlow,
   getCashFlowYears,
   syncAll,
+  getBudget,
+  getBudgetYears,
+  updateBudgetCell,
   getCategories,
   getElements,
   getElementsDetail,
@@ -52,6 +56,10 @@ export default function App() {
   const [cfYear, setCfYear] = useState(String(new Date().getFullYear()));
   const [cfYears, setCfYears] = useState([]);
   const [cfLoading, setCfLoading] = useState(false);
+  const [budget, setBudget] = useState(null);
+  const [budgetYear, setBudgetYear] = useState('2026');
+  const [budgetYears, setBudgetYears] = useState([]);
+  const [budgetLoading, setBudgetLoading] = useState(false);
   const [elementsDetail, setElementsDetail] = useState([]);
   const [elementsLoading, setElementsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -109,6 +117,7 @@ export default function App() {
     getElements().then(setElements).catch((e) => pushToast('error', 'Failed to load elements: ' + e.message));
     getCategoryHints().then(setCategoryHints).catch(() => {});
     getCashFlowYears().then(setCfYears).catch((e) => pushToast('error', 'Failed to load years: ' + e.message));
+    getBudgetYears().then(setBudgetYears).catch(() => {});
     getTransactionYears().then(setTxYears).catch((e) => pushToast('error', 'Failed to load transaction years: ' + e.message));
     loadUsers();
   }, [pushToast, loadUsers]);
@@ -147,6 +156,21 @@ export default function App() {
   useEffect(() => {
     if (tab === 'cashflow') loadCashFlow();
   }, [tab, cfYear, loadCashFlow]);
+
+  const loadBudget = useCallback(async () => {
+    setBudgetLoading(true);
+    try {
+      const data = await getBudget(budgetYear);
+      setBudget(data);
+    } catch (err) {
+      pushToast('error', 'Failed to load budget: ' + err.message);
+    }
+    setBudgetLoading(false);
+  }, [budgetYear]);
+
+  useEffect(() => {
+    if (tab === 'budget') loadBudget();
+  }, [tab, budgetYear, loadBudget]);
 
   const loadElements = useCallback(async () => {
     setElementsLoading(true);
@@ -202,9 +226,11 @@ export default function App() {
     getElements().then(setElements).catch(() => {});
     getCategoryHints().then(setCategoryHints).catch(() => {});
     getCashFlowYears().then(setCfYears).catch(() => {});
+    getBudgetYears().then(setBudgetYears).catch(() => {});
     getTransactionYears().then(setTxYears).catch(() => {});
     if (tab === 'transactions') loadTransactions();
     if (tab === 'cashflow') loadCashFlow();
+    if (tab === 'budget') loadBudget();
     if (tab === 'elements') loadElements();
     if (tab === 'charts') loadCharts();
     if (tab === 'activity') loadActivity();
@@ -241,6 +267,11 @@ export default function App() {
     }
   };
 
+  const handleUpdateBudgetCell = async (year, row, monthIndex, field, value) => {
+    await updateBudgetCell(year, row, monthIndex, field, value);
+    await loadBudget();
+  };
+
   const handleUpdateElementCategory = async (name, category) => {
     await updateElementCategory(name, category);
     await loadElements();
@@ -250,6 +281,7 @@ export default function App() {
   const tabs = [
     { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
     { id: 'cashflow', label: 'Cash Flow', icon: 'monitoring' },
+    { id: 'budget', label: 'Budget', icon: 'account_balance' },
     { id: 'elements', label: 'Elements', icon: 'category' },
     { id: 'charts', label: 'Charts', icon: 'bar_chart' },
     { id: 'activity', label: 'Activity', icon: 'history' },
@@ -556,6 +588,25 @@ export default function App() {
               )}
             </div>
             <CashFlowGrid data={cashFlow} showYoY={showYoY} year={cfYear} />
+          </div>
+        )}
+
+        {/* Budget tab */}
+        {tab === 'budget' && (
+          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-3">
+              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
+              {budgetLoading && (
+                <span className="text-sm text-on-surface-secondary flex items-center gap-2">
+                  <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Loading...
+                </span>
+              )}
+            </div>
+            <BudgetGrid data={budget} year={budgetYear} onUpdate={handleUpdateBudgetCell} />
           </div>
         )}
 

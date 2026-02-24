@@ -26,6 +26,7 @@ function fileStatus(paths) {
   const status = {
     bankingFile: paths.bankingFile ? existsSync(paths.bankingFile) : false,
     cashFlowFile: paths.cashFlowFile ? existsSync(paths.cashFlowFile) : false,
+    budgetFile: paths.budgetFile ? existsSync(paths.budgetFile) : false,
   };
   if (paths.archiveDir) {
     status.archiveDir = existsSync(paths.archiveDir) || null;
@@ -227,8 +228,8 @@ router.post('/create-project', (req, res) => {
 });
 
 router.put('/', (req, res) => {
-  const { bankingFile, cashFlowFile, archiveDir, transactionFiles } = req.body;
-  if (!bankingFile && !cashFlowFile && !archiveDir && !transactionFiles) {
+  const { bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles } = req.body;
+  if (!bankingFile && !cashFlowFile && !budgetFile && !archiveDir && !transactionFiles) {
     return res.status(400).json({ error: 'At least one path is required' });
   }
 
@@ -241,6 +242,10 @@ router.put('/', (req, res) => {
   if (cashFlowFile) {
     if (!existsSync(cashFlowFile)) return res.status(400).json({ error: 'Cash flow file does not exist' });
     update.cashFlowFile = cashFlowFile;
+  }
+  if (budgetFile !== undefined) {
+    if (budgetFile && !existsSync(budgetFile)) return res.status(400).json({ error: 'Budget file does not exist' });
+    update.budgetFile = budgetFile;
   }
   if (archiveDir) {
     update.archiveDir = archiveDir;

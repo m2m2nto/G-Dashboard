@@ -45,6 +45,12 @@ export async function detectFileType(filePath) {
 
   const sheetNamesLower = sheetNames.map((n) => n.toLowerCase());
 
+  // --- Budget detection ---
+  // Has a sheet named "Consuntivo BUDGET" (case-insensitive)
+  if (sheetNamesLower.some((n) => n.includes('consuntivo budget'))) {
+    return { type: 'budget' };
+  }
+
   // --- Cash flow detection ---
   // Has sheets named as 4-digit years + at least 2 of the marker sheets
   const yearSheets = sheetNames.filter((n) => /^\d{4}$/.test(n));
@@ -275,6 +281,7 @@ export async function detectFilesInDir(dirPath) {
  */
 export function buildProposal(detected) {
   const cashFlow = detected.find((d) => d.type === 'cashflow');
+  const budget = detected.find((d) => d.type === 'budget');
   const transactions = detected.filter((d) => d.type === 'transactions' && d.year);
 
   const transactionFiles = {};
@@ -302,6 +309,7 @@ export function buildProposal(detected) {
   return {
     proposal: {
       cashFlowFile: cashFlow?.relativePath || null,
+      budgetFile: budget?.relativePath || null,
       transactionFiles,
     },
     detected,

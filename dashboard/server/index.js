@@ -7,6 +7,7 @@ import metadataRouter from './routes/metadata.js';
 import chartsRouter from './routes/charts.js';
 import activityRouter from './routes/activity.js';
 import settingsRouter from './routes/settings.js';
+import budgetRouter from './routes/budget.js';
 import { ensureBankingFile } from './services/excel.js';
 
 const app = express();
@@ -21,6 +22,7 @@ app.use('/api/metadata', metadataRouter);
 app.use('/api/charts', chartsRouter);
 app.use('/api/activity', activityRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/budget', budgetRouter);
 
 // In .app bundle mode, serve the built client as static files
 const APP_DIR = process.env.GULLIVER_APP_DIR;
