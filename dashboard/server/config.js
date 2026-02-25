@@ -232,20 +232,36 @@ export const CATEGORY_TO_CF_ROW = {
 // Rows that contain formulas (TOTALE rows, MARGINE, SALDO) — never overwrite these
 export const CF_FORMULA_ROWS = [16, 26, 31, 34, 36, 39];
 
-// Budget sheet constants ("Consuntivo BUDGET")
-export const BUDGET_SHEET_NAME = 'Consuntivo BUDGET';
-// Category names live in col B (2) for all years
-export const BUDGET_NAME_COL = 2;
-// Year → { baseCol, yearLabelCol }
-// baseCol: first Budget column for January (Budget = baseCol + m*3, Actual = +1, Diff = +2)
-// yearLabelCol: column where the year label appears in row 2
-export const BUDGET_YEAR_CONFIGS = {
-  2026: { baseCol: 3, yearLabelCol: 1 },
-  2027: { baseCol: 43, yearLabelCol: 42 },
+// Budget file sheet structure (rev. 8+: multi-sheet with scenarios)
+export const BUDGET_SCENARIOS = ['certo', 'possibile', 'ottimistico'];
+
+export const BUDGET_SHEET_NAMES = {
+  generale: (year) => `BUDGET ${year} (generale)`,
+  certo: (year) => `BUDGET ${year} (certo)`,
+  possibile: (year) => `BUDGET ${year} (possibile)`,
+  ottimistico: (year) => `BUDGET ${year} (ottimistico)`,
 };
-// Cost category rows (3-14) and revenue category rows (19-23)
+
+export const CF_BUDGET_SHEET_NAMES = {
+  certo: 'CF (certo)',
+  possibile: 'CF (possibile)',
+  ottimistico: 'CF (ottimisitico)', // typo in actual file
+};
+
+// Row layout (shared across all sheets)
+export const BUDGET_NAME_COL = 2;       // Column B — category names
 export const BUDGET_COST_ROWS = { start: 3, end: 14 };
 export const BUDGET_REVENUE_ROWS = { start: 19, end: 23 };
 export const BUDGET_TOTAL_COSTS_ROW = 16;
 export const BUDGET_TOTAL_REVENUES_ROW = 25;
 export const BUDGET_MARGIN_ROW = 27;
+
+// Scenario sheets: columns C(3)=Jan .. N(14)=Dec, O(15)=Total
+export const BUDGET_SCENARIO_MONTH_START_COL = 3; // Col C = January
+export const BUDGET_SCENARIO_TOTAL_COL = 15;      // Col O = Totale
+
+// Generale sheet: per month, 5 columns (certo, possibile, ottimistico, consuntivo, diff)
+// Month group starts at col 3, each month = 5 columns
+export const BUDGET_GENERALE_MONTH_START_COL = 3;
+export const BUDGET_GENERALE_COLS_PER_MONTH = 5;
+// Within each month group: offsets 0=certo, 1=possibile, 2=ottimistico, 3=consuntivo, 4=diff

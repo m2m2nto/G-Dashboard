@@ -12,14 +12,19 @@ import {
   getBudgetFile,
   listBankingYears,
   registerTransactionFile,
-  BUDGET_SHEET_NAME,
   BUDGET_NAME_COL,
-  BUDGET_YEAR_CONFIGS,
   BUDGET_COST_ROWS,
   BUDGET_REVENUE_ROWS,
   BUDGET_TOTAL_COSTS_ROW,
   BUDGET_TOTAL_REVENUES_ROW,
   BUDGET_MARGIN_ROW,
+  BUDGET_SHEET_NAMES,
+  BUDGET_SCENARIOS,
+  CF_BUDGET_SHEET_NAMES,
+  BUDGET_SCENARIO_MONTH_START_COL,
+  BUDGET_SCENARIO_TOTAL_COL,
+  BUDGET_GENERALE_MONTH_START_COL,
+  BUDGET_GENERALE_COLS_PER_MONTH,
 } from '../config.js';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +56,90 @@ function cellValue(cell) {
     return cell.value.result;
   }
   return cell.value;
+}
+
+// ---------------------------------------------------------------------------
+// JSZip-based formula evaluator for scenario sheets
+// Handles simple formulas: cell refs (incl. absolute $), +, -, *, /,
+// SUM(range), and literal numbers.  Needed because ExcelJS cannot resolve
+// cross-sheet or intra-sheet formulas when cached <v> values are absent.
+// ---------------------------------------------------------------------------
+
+function buildCellEvaluator(xml) {
+  const cells = new Map();
+  // Negative lookbehind (?<!\/) ensures we skip self-closing <c ... /> tags,
+  // which would otherwise consume neighboring cells' content up to the next </c>.
+  const cellRe = /<c\s[^>]*r="([^"]+)"[^>]*(?<!\/)>([\s\S]*?)<\/c>/g;
+  let m;
+  while ((m = cellRe.exec(xml)) !== null) {
+    const ref = m[1];
+    const content = m[2];
+    const vMatch = content.match(/<v>([^<]*)<\/v>/);
+    const fMatch = content.match(/<f[^>]*>([^<]*)<\/f>/);
+    cells.set(ref, {
+      value: vMatch ? Number(vMatch[1]) : null,
+      formula: fMatch ? fMatch[1] : null,
+    });
+  }
+
+  const evalCache = new Map();
+
+  function colToNum(col) {
+    let n = 0;
+    for (let i = 0; i < col.length; i++) n = n * 26 + (col.charCodeAt(i) - 64);
+    return n;
+  }
+
+  function numToCol(n) {
+    let s = '';
+    while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
+    return s;
+  }
+
+  function getCellValue(ref) {
+    const clean = ref.replace(/\$/g, '');
+    if (evalCache.has(clean)) return evalCache.get(clean);
+    const cell = cells.get(clean);
+    if (!cell) { evalCache.set(clean, 0); return 0; }
+    if (cell.value !== null) { evalCache.set(clean, cell.value); return cell.value; }
+    if (cell.formula) {
+      evalCache.set(clean, 0); // prevent infinite recursion
+      const result = evalFormula(cell.formula);
+      evalCache.set(clean, result);
+      return result;
+    }
+    evalCache.set(clean, 0);
+    return 0;
+  }
+
+  function evalFormula(formula) {
+    // SUM(range)
+    const sumMatch = formula.match(/^SUM\((\$?[A-Z]+\$?\d+):(\$?[A-Z]+\$?\d+)\)$/i);
+    if (sumMatch) {
+      const sRef = sumMatch[1].replace(/\$/g, '');
+      const eRef = sumMatch[2].replace(/\$/g, '');
+      const sCol = sRef.match(/^([A-Z]+)/)[1];
+      const sRow = parseInt(sRef.match(/(\d+)$/)[1]);
+      const eCol = eRef.match(/^([A-Z]+)/)[1];
+      const eRow = parseInt(eRef.match(/(\d+)$/)[1]);
+      let sum = 0;
+      for (let r = sRow; r <= eRow; r++)
+        for (let c = colToNum(sCol); c <= colToNum(eCol); c++)
+          sum += getCellValue(numToCol(c) + r);
+      return sum;
+    }
+    // Simple arithmetic: strip $ markers, replace cell refs with values, evaluate
+    let expr = formula.replace(/\$/g, '');
+    expr = expr.replace(/([A-Z]+\d+)/g, (match) => String(getCellValue(match)));
+    try {
+      if (/^[\d\s+\-*/().]+$/.test(expr)) {
+        return Function('"use strict"; return (' + expr + ')')();
+      }
+    } catch { /* fall through */ }
+    return 0;
+  }
+
+  return getCellValue;
 }
 
 // ---------------------------------------------------------------------------
@@ -1431,75 +1520,234 @@ export function syncAllCashFlow(monthsToSync = MONTHS, year) {
 }
 
 // ---------------------------------------------------------------------------
-// Budget (READ — exceljs, "Consuntivo BUDGET" sheet)
+// Budget (READ — exceljs, multi-sheet with scenarios)
 // ---------------------------------------------------------------------------
 
-export async function readBudget(year) {
+/**
+ * Read the "generale" summary sheet — annual overview with all scenarios.
+ * Returns { year, costs[], revenues[], totals } where each category has
+ * annual + per-month values for certo/possibile/ottimistico/consuntivo/diff.
+ */
+export async function readBudgetGenerale(year) {
   const filePath = getBudgetFile();
   if (!filePath) throw new Error('Budget file not configured');
   const y = Number(year);
-  const yearCfg = BUDGET_YEAR_CONFIGS[y];
-  if (!yearCfg) throw new Error(`No budget data for year ${year}`);
-  const { baseCol } = yearCfg;
+
+  // Read file once into buffer for both ExcelJS (consuntivo) and JSZip (scenarios)
+  const fileBuf = await readFile(filePath);
 
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.readFile(filePath);
-  const ws = wb.getWorksheet(BUDGET_SHEET_NAME);
-  if (!ws) throw new Error(`Sheet "${BUDGET_SHEET_NAME}" not found`);
+  await wb.xlsx.load(fileBuf);
 
-  function readRowData(row) {
+  // Generale sheet — read consuntivo values (the only non-formula column)
+  const genSheet = wb.getWorksheet(BUDGET_SHEET_NAMES.generale(y));
+  if (!genSheet) throw new Error(`Sheet "${BUDGET_SHEET_NAMES.generale(y)}" not found`);
+
+  // Scenario sheets — use JSZip + formula evaluator because both the generale
+  // sheet (cross-sheet refs) and scenario sheets (intra-sheet formula refs for
+  // revenue rows) lack cached <v> values, so ExcelJS returns undefined.
+  const zip = await JSZip.loadAsync(fileBuf);
+  const scenarioEvals = {};
+  for (const s of BUDGET_SCENARIOS) {
+    const sName = BUDGET_SHEET_NAMES[s](y);
+    try {
+      const sPath = await resolveBudgetSheetPath(zip, sName);
+      const sXml = await zip.file(sPath).async('string');
+      scenarioEvals[s] = buildCellEvaluator(sXml);
+    } catch { /* sheet not found — leave undefined */ }
+  }
+
+  // Column-number-to-letter helper (1=A, 2=B, ..., 27=AA)
+  function numToCol(n) {
+    let s = '';
+    while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
+    return s;
+  }
+
+  function readScenarioValue(scenario, row, monthIndex) {
+    const eval_ = scenarioEvals[scenario];
+    if (!eval_) return 0;
+    const col = numToCol(BUDGET_SCENARIO_MONTH_START_COL + monthIndex);
+    return eval_(col + row) || 0;
+  }
+
+  function readRowGenerale(row) {
     const months = {};
     for (let m = 0; m < 12; m++) {
-      const budgetCol = baseCol + m * 3;
-      const actualCol = budgetCol + 1;
-      const diffCol = budgetCol + 2;
-      const budget = cellValue(ws.getRow(row).getCell(budgetCol));
-      const actual = cellValue(ws.getRow(row).getCell(actualCol));
-      const diff = cellValue(ws.getRow(row).getCell(diffCol));
+      // Consuntivo: read from generale sheet (offset 3 within month group)
+      const consuntivoCol = BUDGET_GENERALE_MONTH_START_COL + m * BUDGET_GENERALE_COLS_PER_MONTH + 3;
+      const rawC = cellValue(genSheet.getRow(row).getCell(consuntivoCol));
+      const consuntivo = rawC != null ? Number(rawC) || 0 : 0;
+
+      // Scenario values: read from individual scenario sheets with formula eval
+      const certo = readScenarioValue('certo', row, m);
+      const possibile = readScenarioValue('possibile', row, m);
+      const ottimistico = readScenarioValue('ottimistico', row, m);
+
       months[MONTHS[m]] = {
-        budget: budget != null ? Number(budget) || 0 : 0,
-        actual: actual != null ? Number(actual) || 0 : 0,
-        diff: diff != null ? Number(diff) || 0 : 0,
+        certo,
+        possibile,
+        ottimistico,
+        consuntivo,
+        diff: consuntivo - possibile,
       };
     }
-    // Totals: baseCol + 36/37/38
-    const totalBudget = cellValue(ws.getRow(row).getCell(baseCol + 36));
-    const totalActual = cellValue(ws.getRow(row).getCell(baseCol + 37));
-    const totalDiff = cellValue(ws.getRow(row).getCell(baseCol + 38));
-    return {
-      months,
-      total: {
-        budget: totalBudget != null ? Number(totalBudget) || 0 : 0,
-        actual: totalActual != null ? Number(totalActual) || 0 : 0,
-        diff: totalDiff != null ? Number(totalDiff) || 0 : 0,
-      },
-    };
+    const annual = {};
+    for (const field of ['certo', 'possibile', 'ottimistico', 'consuntivo', 'diff']) {
+      annual[field] = MONTHS.reduce((sum, mn) => sum + months[mn][field], 0);
+    }
+    return { months, annual };
   }
 
-  // Category names always in col B (shared across all years)
-  const costs = [];
-  for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
-    const category = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL)) || '';
-    if (!category) continue;
-    costs.push({ category, row: r, ...readRowData(r) });
+  function readCategoryRows(range) {
+    const items = [];
+    for (let r = range.start; r <= range.end; r++) {
+      const category = cellValue(genSheet.getRow(r).getCell(BUDGET_NAME_COL)) || '';
+      if (!category) continue;
+      items.push({ category, row: r, ...readRowGenerale(r) });
+    }
+    return items;
   }
 
-  const revenues = [];
-  for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
-    const category = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL)) || '';
-    if (!category) continue;
-    revenues.push({ category, row: r, ...readRowData(r) });
+  const costs = readCategoryRows(BUDGET_COST_ROWS);
+  const revenues = readCategoryRows(BUDGET_REVENUE_ROWS);
+
+  // Compute totals by summing category rows (formula rows have no cached results)
+  const TOTAL_FIELDS = ['certo', 'possibile', 'ottimistico', 'consuntivo', 'diff'];
+  function sumRows(rows) {
+    const months = {};
+    for (const m of MONTHS) {
+      const entry = {};
+      for (const f of TOTAL_FIELDS) {
+        entry[f] = rows.reduce((sum, r) => sum + (r.months[m][f] || 0), 0);
+      }
+      months[m] = entry;
+    }
+    const annual = {};
+    for (const f of TOTAL_FIELDS) {
+      annual[f] = MONTHS.reduce((sum, m) => sum + months[m][f], 0);
+    }
+    return { months, annual };
   }
 
-  const totals = {
-    totalCosts: readRowData(BUDGET_TOTAL_COSTS_ROW),
-    totalRevenues: readRowData(BUDGET_TOTAL_REVENUES_ROW),
-    margin: readRowData(BUDGET_MARGIN_ROW),
+  const totalCosts = sumRows(costs);
+  const totalRevenues = sumRows(revenues);
+  const margin = { months: {}, annual: {} };
+  for (const m of MONTHS) {
+    const entry = {};
+    for (const f of TOTAL_FIELDS) {
+      entry[f] = totalRevenues.months[m][f] - totalCosts.months[m][f];
+    }
+    margin.months[m] = entry;
+  }
+  for (const f of TOTAL_FIELDS) {
+    margin.annual[f] = totalRevenues.annual[f] - totalCosts.annual[f];
+  }
+
+  return {
+    year: y,
+    costs,
+    revenues,
+    totals: { totalCosts, totalRevenues, margin },
   };
-
-  return { year: y, costs, revenues, totals };
 }
 
+/**
+ * Read an individual scenario sheet (budget or CF).
+ * Returns { year, scenario, type, costs[], revenues[], totals } with per-month values + total.
+ */
+export async function readBudgetScenario(year, scenario, type = 'budget') {
+  const filePath = getBudgetFile();
+  if (!filePath) throw new Error('Budget file not configured');
+  const y = Number(year);
+
+  if (!BUDGET_SCENARIOS.includes(scenario)) {
+    throw new Error(`Invalid scenario "${scenario}"`);
+  }
+
+  const sheetName = type === 'cf'
+    ? CF_BUDGET_SHEET_NAMES[scenario]
+    : BUDGET_SHEET_NAMES[scenario](y);
+
+  // Use JSZip + formula evaluator — revenue rows contain intra-sheet formulas
+  // referencing detail tables (cols T/Y/Z) whose results are not cached.
+  const fileBuf = await readFile(filePath);
+  const zip = await JSZip.loadAsync(fileBuf);
+  const sheetPath = await resolveBudgetSheetPath(zip, sheetName);
+  const sheetXml = await zip.file(sheetPath).async('string');
+  const getCellValue = buildCellEvaluator(sheetXml);
+
+  // Column-number-to-letter helper
+  function numToCol(n) {
+    let s = '';
+    while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
+    return s;
+  }
+
+  // Also read category names via ExcelJS (plain text, always works)
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(fileBuf);
+  const ws = wb.getWorksheet(sheetName);
+  if (!ws) throw new Error(`Sheet "${sheetName}" not found`);
+
+  function readRowScenario(row) {
+    const months = {};
+    for (let m = 0; m < 12; m++) {
+      const colLetter = numToCol(BUDGET_SCENARIO_MONTH_START_COL + m);
+      months[MONTHS[m]] = getCellValue(colLetter + row) || 0;
+    }
+    const total = MONTHS.reduce((sum, mn) => sum + months[mn], 0);
+    return { months, total };
+  }
+
+  function readCategoryRows(range) {
+    const items = [];
+    for (let r = range.start; r <= range.end; r++) {
+      const category = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL)) || '';
+      if (!category) continue;
+      items.push({ category, row: r, ...readRowScenario(r) });
+    }
+    return items;
+  }
+
+  const costs = readCategoryRows(BUDGET_COST_ROWS);
+  const revenues = readCategoryRows(BUDGET_REVENUE_ROWS);
+
+  // Compute totals by summing category rows
+  function sumScenarioRows(rows) {
+    const months = {};
+    for (const m of MONTHS) {
+      months[m] = rows.reduce((sum, r) => sum + (r.months[m] || 0), 0);
+    }
+    const total = MONTHS.reduce((sum, m) => sum + months[m], 0);
+    return { months, total };
+  }
+
+  const totalCosts = sumScenarioRows(costs);
+  const totalRevenues = sumScenarioRows(revenues);
+  const marginMonths = {};
+  for (const m of MONTHS) {
+    marginMonths[m] = totalRevenues.months[m] - totalCosts.months[m];
+  }
+  const marginTotal = MONTHS.reduce((sum, m) => sum + marginMonths[m], 0);
+
+  return {
+    year: y,
+    scenario,
+    type,
+    costs,
+    revenues,
+    totals: {
+      totalCosts,
+      totalRevenues,
+      margin: { months: marginMonths, total: marginTotal },
+    },
+  };
+}
+
+/**
+ * List available budget years by scanning sheet names for "BUDGET YYYY (generale)".
+ */
 export async function listBudgetYears() {
   const filePath = getBudgetFile();
   if (!filePath) return [];
@@ -1511,52 +1759,110 @@ export async function listBudgetYears() {
 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(filePath);
-  const ws = wb.getWorksheet(BUDGET_SHEET_NAME);
-  if (!ws) return [];
-
   const years = [];
-  for (const [yearStr, cfg] of Object.entries(BUDGET_YEAR_CONFIGS)) {
-    // Check if the year label appears in its designated column at row 2
-    const label = cellValue(ws.getRow(2).getCell(cfg.yearLabelCol));
-    if (label != null) {
-      years.push(yearStr);
-    }
-  }
+  wb.eachSheet((ws) => {
+    const m = ws.name.match(/^BUDGET\s+(\d{4})\s+\(generale\)$/i);
+    if (m) years.push(m[1]);
+  });
   return years.sort().reverse();
 }
 
-// ---------------------------------------------------------------------------
-// Budget (WRITE — xlsx-populate, single cell update)
-// ---------------------------------------------------------------------------
+/**
+ * Write a single consuntivo value in the "generale" budget sheet.
+ * @param {string|number} year
+ * @param {number} row — Excel row (e.g. 3–14 for costs, 19–23 for revenues)
+ * @param {number} monthIndex — 0 (GEN) .. 11 (DIC)
+ * @param {number|null} value — numeric value or null to clear
+ */
+// Column-number to letter mapping for budget generale sheet (up to col 63 = BK)
+const BUDGET_COL_LETTER = (() => {
+  const m = {};
+  for (let c = 1; c <= 70; c++) {
+    if (c <= 26) m[c] = String.fromCharCode(64 + c);
+    else m[c] = String.fromCharCode(64 + Math.floor((c - 1) / 26)) + String.fromCharCode(64 + ((c - 1) % 26) + 1);
+  }
+  return m;
+})();
 
-const BUDGET_FORMULA_ROWS = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
+/**
+ * Resolve the worksheet XML path for a named sheet inside a JSZip instance.
+ */
+async function resolveBudgetSheetPath(zip, sheetName) {
+  const wbXml = await zip.file('xl/workbook.xml').async('string');
+  const relsXml = await zip.file('xl/_rels/workbook.xml.rels').async('string');
 
-export function updateBudgetCell(year, row, monthIndex, field, value) {
+  const relMap = {};
+  const relRe = /<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*\/>/g;
+  let relMatch;
+  while ((relMatch = relRe.exec(relsXml)) !== null) {
+    relMap[relMatch[1]] = relMatch[2];
+  }
+
+  const sheetRe = /<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"[^>]*\/>/g;
+  let sheetMatch;
+  while ((sheetMatch = sheetRe.exec(wbXml)) !== null) {
+    if (sheetMatch[1] === sheetName) {
+      const target = relMap[sheetMatch[2]];
+      if (!target) throw new Error(`Relationship not found for sheet "${sheetName}"`);
+      return `xl/${target}`;
+    }
+  }
+  throw new Error(`Sheet "${sheetName}" not found in workbook`);
+}
+
+/**
+ * Batch-write all consuntivo cells from aggregated budget entries.
+ * Uses JSZip-level XML manipulation to preserve formulas and cached values
+ * in other columns (certo, possibile, ottimistico, diff).
+ *
+ * @param {string|number} year
+ * @param {Map<string, number>} aggregation — keys are "row-monthIndex", values are summed amounts
+ */
+export function updateBudgetConsuntivoBatch(year, aggregation) {
   const filePath = getBudgetFile();
   if (!filePath) throw new Error('Budget file not configured');
-  const y = Number(year);
-  const yearCfg = BUDGET_YEAR_CONFIGS[y];
-  if (!yearCfg) throw new Error(`No budget config for year ${year}`);
 
-  if (BUDGET_FORMULA_ROWS.includes(row)) {
-    throw new Error(`Row ${row} is a formula/total row and cannot be edited`);
-  }
-  if (field !== 'budget' && field !== 'actual') {
-    throw new Error(`Invalid field "${field}" — must be "budget" or "actual"`);
-  }
-  if (monthIndex < 0 || monthIndex > 11) {
-    throw new Error(`Invalid monthIndex ${monthIndex}`);
-  }
-
-  const { baseCol } = yearCfg;
-  const col = baseCol + monthIndex * 3 + (field === 'actual' ? 1 : 0);
+  const formulaRows = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
 
   return withLock(filePath, async () => {
-    const wb = await XlsxPopulate.fromFileAsync(filePath);
-    const ws = wb.sheet(BUDGET_SHEET_NAME);
-    if (!ws) throw new Error(`Sheet "${BUDGET_SHEET_NAME}" not found`);
-    ws.cell(row, col).value(value != null && value !== '' ? Number(value) : undefined);
-    await wb.toFileAsync(filePath);
-    return { row, monthIndex, field, value };
+    const fileBuf = await readFile(filePath);
+    const zip = await JSZip.loadAsync(fileBuf);
+    const sheetName = BUDGET_SHEET_NAMES.generale(Number(year));
+    const sheetPath = await resolveBudgetSheetPath(zip, sheetName);
+    let sheetXml = await zip.file(sheetPath).async('string');
+
+    // Build list of data rows (cost + revenue, skip formula rows)
+    const allRows = [];
+    for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
+      if (!formulaRows.includes(r)) allRows.push(r);
+    }
+    for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
+      if (!formulaRows.includes(r)) allRows.push(r);
+    }
+
+    // Zero out all consuntivo cells
+    for (const r of allRows) {
+      for (let mi = 0; mi < 12; mi++) {
+        const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + 3;
+        const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+        sheetXml = xmlSetCell(sheetXml, cellRef, 0);
+      }
+    }
+
+    // Write aggregated values
+    for (const [key, amount] of aggregation) {
+      const [rowStr, miStr] = key.split('-');
+      const r = Number(rowStr);
+      const mi = Number(miStr);
+      if (formulaRows.includes(r)) continue;
+      const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + 3;
+      const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+      sheetXml = xmlSetCell(sheetXml, cellRef, amount);
+    }
+
+    zip.file(sheetPath, sheetXml);
+    const outBuf = await zip.generateAsync({ type: 'nodebuffer' });
+    await writeFile(filePath, outBuf);
+    return { ok: true };
   });
 }

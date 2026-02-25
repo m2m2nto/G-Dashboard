@@ -78,14 +78,30 @@ export const getYoYQoQ = () => request('/charts/yoy-qoq');
 
 export const getBudget = (year) => request(`/budget/${year}`);
 
-export const getBudgetYears = () => request('/budget/years');
+export const getBudgetYears = () => request('/budget/years').then(r => r.years);
 
-export const updateBudgetCell = (year, row, monthIndex, field, value) =>
-  request(`/budget/${year}/cell`, {
+export const getBudgetScenario = (year, scenario) => request(`/budget/${year}/scenario/${scenario}`);
+
+export const getBudgetCF = (year, scenario) => request(`/budget/${year}/cf/${scenario}`);
+
+export const getBudgetEntries = (year) => request(`/budget-entries/${year}`);
+
+export const addBudgetEntry = (year, data) =>
+  request(`/budget-entries/${year}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+export const updateBudgetEntry = (year, id, data) =>
+  request(`/budget-entries/${year}/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ row, monthIndex, field, value }),
+    body: JSON.stringify(data),
   });
+
+export const deleteBudgetEntry = (year, id) =>
+  request(`/budget-entries/${year}/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const getSettings = () => request('/settings');
 

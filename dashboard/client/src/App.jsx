@@ -23,7 +23,10 @@ import {
   syncAll,
   getBudget,
   getBudgetYears,
-  updateBudgetCell,
+  getBudgetEntries,
+  addBudgetEntry,
+  updateBudgetEntry,
+  deleteBudgetEntry,
   getCategories,
   getElements,
   getElementsDetail,
@@ -60,6 +63,8 @@ export default function App() {
   const [budgetYear, setBudgetYear] = useState('2026');
   const [budgetYears, setBudgetYears] = useState([]);
   const [budgetLoading, setBudgetLoading] = useState(false);
+  const [budgetEntries, setBudgetEntries] = useState([]);
+  const [budgetEntriesLoading, setBudgetEntriesLoading] = useState(false);
   const [elementsDetail, setElementsDetail] = useState([]);
   const [elementsLoading, setElementsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -173,6 +178,50 @@ export default function App() {
     if (tab === 'budget') loadBudget();
   }, [tab, budgetYear, loadBudget]);
 
+  const loadBudgetEntries = useCallback(async () => {
+    setBudgetEntriesLoading(true);
+    try {
+      const data = await getBudgetEntries(budgetYear);
+      setBudgetEntries(data.entries || []);
+    } catch (err) {
+      pushToast('error', 'Failed to load budget entries: ' + err.message);
+    }
+    setBudgetEntriesLoading(false);
+  }, [budgetYear]);
+
+  useEffect(() => {
+    if (tab === 'budget') loadBudgetEntries();
+  }, [tab, budgetYear, loadBudgetEntries]);
+
+  const handleAddBudgetEntry = async (data) => {
+    try {
+      await addBudgetEntry(budgetYear, data);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to add entry');
+      throw err;
+    }
+  };
+
+  const handleUpdateBudgetEntry = async (id, data) => {
+    try {
+      await updateBudgetEntry(budgetYear, id, data);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to update entry');
+      throw err;
+    }
+  };
+
+  const handleDeleteBudgetEntry = async (id) => {
+    try {
+      await deleteBudgetEntry(budgetYear, id);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to delete entry');
+    }
+  };
+
   const loadElements = useCallback(async () => {
     setElementsLoading(true);
     try {
@@ -231,7 +280,7 @@ export default function App() {
     getTransactionYears().then(setTxYears).catch(() => {});
     if (tab === 'transactions') loadTransactions();
     if (tab === 'cashflow') loadCashFlow();
-    if (tab === 'budget') loadBudget();
+    if (tab === 'budget') { loadBudget(); loadBudgetEntries(); }
     if (tab === 'cashflow' && cfSubTab === 'elements') loadElements();
     if (tab === 'charts') loadCharts();
     if (tab === 'activity') loadActivity();
@@ -268,11 +317,6 @@ export default function App() {
     }
   };
 
-  const handleUpdateBudgetCell = async (year, row, monthIndex, field, value) => {
-    await updateBudgetCell(year, row, monthIndex, field, value);
-    await loadBudget();
-  };
-
   const handleUpdateElementCategory = async (name, category) => {
     await updateElementCategory(name, category);
     await loadElements();
@@ -282,7 +326,6 @@ export default function App() {
   const tabs = [
     { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
     { id: 'cashflow', label: 'Cash Flow', icon: 'monitoring' },
-    { id: 'budget', label: 'Budget', icon: 'account_balance' },
     { id: 'charts', label: 'Charts', icon: 'bar_chart' },
     { id: 'activity', label: 'Activity', icon: 'history' },
   ];
@@ -398,7 +441,7 @@ export default function App() {
       {/* Nav bar */}
       <nav className="bg-white shadow-elevation-1 sticky top-0 z-10">
         <div className="max-w-content mx-auto px-6 flex items-center h-16">
-          <span className="text-base font-semibold text-on-surface mr-8 tracking-tight">GL-Dashboard</span>
+          <span className="text-base font-semibold text-on-surface mr-8 tracking-tight">G-Dashboard</span>
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -414,6 +457,19 @@ export default function App() {
               )}
             </button>
           ))}
+          <span className="w-px h-6 bg-surface-border mx-1"></span>
+          <button
+            onClick={() => setTab('budget')}
+            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
+              tab === 'budget' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>account_balance</span>
+            Budget
+            {tab === 'budget' && (
+              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
+            )}
+          </button>
           <div className="ml-auto flex items-center gap-1">
             <UserSwitcher
               users={users}
@@ -686,7 +742,19 @@ export default function App() {
                 </span>
               )}
             </div>
-            <BudgetGrid data={budget} year={budgetYear} onUpdate={handleUpdateBudgetCell} />
+            <BudgetGrid
+              data={budget}
+              year={budgetYear}
+              entries={budgetEntries}
+              budgetCategories={budget ? [
+                ...budget.costs.map((c) => ({ category: c.category, row: c.row, type: 'cost' })),
+                ...budget.revenues.map((c) => ({ category: c.category, row: c.row, type: 'revenue' })),
+              ] : []}
+              onAddEntry={handleAddBudgetEntry}
+              onUpdateEntry={handleUpdateBudgetEntry}
+              onDeleteEntry={handleDeleteBudgetEntry}
+              entriesLoading={budgetEntriesLoading}
+            />
           </div>
         )}
 

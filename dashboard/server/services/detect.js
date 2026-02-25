@@ -46,8 +46,8 @@ export async function detectFileType(filePath) {
   const sheetNamesLower = sheetNames.map((n) => n.toLowerCase());
 
   // --- Budget detection ---
-  // Has a sheet named "Consuntivo BUDGET" (case-insensitive)
-  if (sheetNamesLower.some((n) => n.includes('consuntivo budget'))) {
+  // Has sheets matching "BUDGET YYYY" pattern (e.g. "BUDGET 2026 (generale)")
+  if (sheetNamesLower.some((n) => /budget\s+\d{4}/.test(n))) {
     return { type: 'budget' };
   }
 

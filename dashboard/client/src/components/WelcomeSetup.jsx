@@ -293,7 +293,7 @@ export default function WelcomeSetup({ onComplete }) {
           folder_open
         </span>
         <h1 className="text-xl font-semibold text-on-surface mb-2">
-          Welcome to GL-Dashboard
+          Welcome to G-Dashboard
         </h1>
         <p className="text-sm text-on-surface-secondary mb-6">
           Select a folder containing your Excel data files. The system will automatically detect transaction files and cash flow files.

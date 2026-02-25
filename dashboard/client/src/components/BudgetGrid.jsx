@@ -1,11 +1,38 @@
-import { useState, useRef, useEffect } from 'react';
-import { CONTROL_COMPACT } from '../ui.js';
+import { useState, useEffect, useCallback } from 'react';
+import { getBudgetScenario } from '../api.js';
+import BudgetEntries from './BudgetEntries.jsx';
+import { BUTTON_GHOST, BUTTON_PILL_BASE } from '../ui.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
+const SCENARIOS = ['certo', 'possibile', 'ottimistico'];
+const SCENARIO_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico' };
+const FIELDS = ['certo', 'possibile', 'ottimistico', 'consuntivo', 'diff'];
+const FIELD_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico', consuntivo: 'Consuntivo', diff: 'Δ' };
 
 function fmt(v) {
-  if (v == null || v === 0) return '-';
+  if (v == null || v === 0) return '\u2014';
   return Number(v).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+}
+
+// Diff = consuntivo - possibile. Costs: negative (under budget) = green. Revenues: positive (over forecast) = green.
+function diffColor(value, isCost) {
+  if (value == null || value === 0) return '';
+  const isGood = isCost ? value < 0 : value > 0;
+  return isGood ? 'text-cf-pos' : 'text-cf-neg';
+}
+
+// Clickable consuntivo value — navigates to entries filtered by month+category
+function ConsuntivoLink({ value, onClick }) {
+  if (value == null || value === 0) return <span>{fmt(value)}</span>;
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="text-primary hover:text-primary-hover hover:underline underline-offset-2 tabular-nums cursor-pointer"
+      title="View entries"
+    >
+      {fmt(value)}
+    </button>
+  );
 }
 
 function BudgetSkeleton() {
@@ -14,27 +41,23 @@ function BudgetSkeleton() {
       <table className="min-w-full text-sm">
         <thead>
           <tr className="bg-surface-dim text-on-surface-secondary">
-            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky left-0 z-20 bg-surface-dim" colSpan={2}>Category</th>
-            {MONTHS.map((m) => (
-              <th key={m} className="px-2 py-2 text-right text-xs font-medium w-24 bg-surface-dim">{m}</th>
+            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky left-0 z-20 bg-surface-dim w-56">Categoria</th>
+            {['Certo', 'Possibile', 'Ottimistico', 'Consuntivo', 'Δ'].map((h) => (
+              <th key={h} className="px-3 py-2 text-right text-xs font-medium w-28 bg-surface-dim">{h}</th>
             ))}
-            <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 bg-surface-dim">TOTALE</th>
           </tr>
         </thead>
         <tbody>
           {Array.from({ length: 8 }, (_, i) => (
             <tr key={i} className="border-b border-surface-border">
-              <td className="px-3 py-3 border-r border-surface-border sticky left-0 z-10 bg-white" colSpan={2}>
-                <div className="skeleton h-4 w-24" />
+              <td className="px-3 py-3 border-r border-surface-border sticky left-0 z-10 bg-white">
+                <div className="skeleton h-4 w-32" />
               </td>
-              {MONTHS.map((m) => (
-                <td key={m} className="px-2 py-3">
-                  <div className="skeleton h-12 w-20 ml-auto" />
+              {Array.from({ length: 5 }, (_, j) => (
+                <td key={j} className="px-3 py-3">
+                  <div className="skeleton h-4 w-20 ml-auto" />
                 </td>
               ))}
-              <td className="px-2 py-3 border-l border-surface-border">
-                <div className="skeleton h-12 w-24 ml-auto" />
-              </td>
             </tr>
           ))}
         </tbody>
@@ -43,289 +66,111 @@ function BudgetSkeleton() {
   );
 }
 
-function EditableCell({ value, row, monthIndex, field, editingCell, onStartEdit, onSave, onCancel, saving }) {
-  const inputRef = useRef(null);
-  const isEditing =
-    editingCell &&
-    editingCell.row === row &&
-    editingCell.monthIndex === monthIndex &&
-    editingCell.field === field;
+// ---------------------------------------------------------------------------
+// Annual Summary View
+// ---------------------------------------------------------------------------
 
-  const [editValue, setEditValue] = useState('');
+function AnnualSummary({ data, onConsuntivoClick }) {
+  const [expandedRow, setExpandedRow] = useState(null);
 
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
+  const colSpan = 7; // category + 5 scenario columns + 1 for diff
 
-  if (isEditing) {
-    return (
-      <input
-        ref={inputRef}
-        type="number"
-        step="any"
-        value={editValue}
-        onChange={(e) => setEditValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            onSave(row, monthIndex, field, editValue);
-          } else if (e.key === 'Escape') {
-            onCancel();
-          }
-        }}
-        onBlur={() => onSave(row, monthIndex, field, editValue)}
-        disabled={saving}
-        className={`${CONTROL_COMPACT} w-20 text-right text-xs tabular-nums`}
-      />
-    );
-  }
+  const toggle = (key) => setExpandedRow((prev) => (prev === key ? null : key));
 
-  return (
-    <span
-      className="cursor-pointer hover:bg-primary-light/30 rounded px-1 py-0.5 transition-colors tabular-nums"
-      onClick={() => {
-        setEditValue(value || 0);
-        onStartEdit({ row, monthIndex, field });
-      }}
-    >
-      {fmt(value)}
-    </span>
-  );
-}
-
-function computeTotals(rows, isCost) {
-  const result = {};
-  for (let m = 0; m < 12; m++) {
-    let budget = 0, actual = 0;
-    for (const row of rows) {
-      const monthData = row.months[MONTHS[m]];
-      budget += monthData.budget || 0;
-      actual += monthData.actual || 0;
-    }
-    const diff = actual - budget;
-    result[MONTHS[m]] = { budget, actual, diff };
-  }
-  // Total column
-  let totalBudget = 0, totalActual = 0;
-  for (const m of MONTHS) {
-    totalBudget += result[m].budget;
-    totalActual += result[m].actual;
-  }
-  result.total = { budget: totalBudget, actual: totalActual, diff: totalActual - totalBudget };
-  return result;
-}
-
-export default function BudgetGrid({ data, year, onUpdate }) {
-  const [editingCell, setEditingCell] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  if (!data) return <BudgetSkeleton />;
-
-  const handleStartEdit = (cell) => {
-    setEditingCell(cell);
-  };
-
-  const handleCancel = () => {
-    setEditingCell(null);
-  };
-
-  const handleSave = async (row, monthIndex, field, value) => {
-    setEditingCell(null);
-    if (!onUpdate) return;
-    const numValue = value !== '' && value != null ? Number(value) : 0;
-    setSaving(true);
-    try {
-      await onUpdate(year, row, monthIndex, field, numValue);
-    } catch {
-      // Toast handled by parent
-    }
-    setSaving(false);
-  };
-
-  const costTotals = computeTotals(data.costs, true);
-  const revTotals = computeTotals(data.revenues, false);
-
-  // Margin = revenues - costs (per month)
-  const marginData = {};
-  for (const m of MONTHS) {
-    const mb = revTotals[m].budget - costTotals[m].budget;
-    const ma = revTotals[m].actual - costTotals[m].actual;
-    marginData[m] = { budget: mb, actual: ma, diff: ma - mb };
-  }
-  marginData.total = {
-    budget: revTotals.total.budget - costTotals.total.budget,
-    actual: revTotals.total.actual - costTotals.total.actual,
-    diff: (revTotals.total.actual - costTotals.total.actual) - (revTotals.total.budget - costTotals.total.budget),
-  };
-
-  const colSpan = MONTHS.length + 3; // category + label col + 12 months + totale
-
-  const diffColor = (value, isCost) => {
-    if (value == null || value === 0) return '';
-    // For costs: negative diff (actual < budget = spent less) = green
-    // For revenues: positive diff (actual > budget = earned more) = green
-    const isGood = isCost ? value < 0 : value > 0;
-    return isGood ? 'text-cf-pos' : 'text-cf-neg';
-  };
-
-  const renderCategoryRows = (rows, isCost) =>
+  const renderCategoryRows = (rows, isCost, section) =>
     rows.map((row) => {
-      // Build sub-rows: B (budget), A (actual), Δ (diff)
+      const key = `${section}-${row.row}`;
+      const isExpanded = expandedRow === key;
       return (
-        <tbody key={row.category} className="border-b border-surface-border">
-          {/* Budget sub-row */}
-          <tr className="hover:bg-surface-dim/50 transition-colors">
-            <td
-              rowSpan={3}
-              className="px-3 py-1 text-sm border-r border-surface-border whitespace-nowrap text-on-surface sticky left-0 z-10 bg-white align-middle"
-            >
-              {row.category}
+        <tbody key={key} className="border-b border-surface-border">
+          <tr
+            className="hover:bg-surface-dim/50 transition-colors cursor-pointer"
+            onClick={() => toggle(key)}
+          >
+            <td className="px-3 py-2 text-sm border-r border-surface-border whitespace-nowrap text-on-surface sticky left-0 z-10 bg-white">
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-on-surface-tertiary" style={{ fontSize: '16px', transition: 'transform 150ms', transform: isExpanded ? 'rotate(90deg)' : '' }}>
+                  chevron_right
+                </span>
+                {row.category}
+              </span>
             </td>
-            <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">B</td>
-            {MONTHS.map((m, mi) => (
-              <td key={m} className="px-1 py-0.5 text-right text-xs">
-                <EditableCell
-                  value={row.months[m].budget}
-                  row={row.row}
-                  monthIndex={mi}
-                  field="budget"
-                  editingCell={editingCell}
-                  onStartEdit={handleStartEdit}
-                  onSave={handleSave}
-                  onCancel={handleCancel}
-                  saving={saving}
-                />
-              </td>
-            ))}
-            <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
-              {fmt(Object.values(row.months).reduce((s, d) => s + (d.budget || 0), 0))}
-            </td>
-          </tr>
-          {/* Actual sub-row */}
-          <tr className="hover:bg-surface-dim/50 transition-colors">
-            <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">A</td>
-            {MONTHS.map((m, mi) => (
-              <td key={m} className="px-1 py-0.5 text-right text-xs">
-                <EditableCell
-                  value={row.months[m].actual}
-                  row={row.row}
-                  monthIndex={mi}
-                  field="actual"
-                  editingCell={editingCell}
-                  onStartEdit={handleStartEdit}
-                  onSave={handleSave}
-                  onCancel={handleCancel}
-                  saving={saving}
-                />
-              </td>
-            ))}
-            <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
-              {fmt(Object.values(row.months).reduce((s, d) => s + (d.actual || 0), 0))}
-            </td>
-          </tr>
-          {/* Diff sub-row */}
-          <tr className="hover:bg-surface-dim/50 transition-colors">
-            <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">&Delta;</td>
-            {MONTHS.map((m) => {
-              const diff = (row.months[m].actual || 0) - (row.months[m].budget || 0);
+            {FIELDS.map((f) => {
+              const v = f === 'diff' ? -row.annual[f] : row.annual[f];
+              if (f === 'consuntivo') {
+                return (
+                  <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
+                    <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category)} />
+                  </td>
+                );
+              }
               return (
-                <td key={m} className={`px-2 py-0.5 text-right text-xs tabular-nums ${diffColor(diff, isCost)}`}>
-                  {diff !== 0 ? ((diff > 0 ? '+' : '') + fmt(diff)) : '-'}
+                <td
+                  key={f}
+                  className={`px-3 py-2 text-right text-sm tabular-nums ${
+                    f === 'diff' ? diffColor(v, isCost) : ''
+                  }`}
+                >
+                  {f === 'diff' && v !== 0
+                    ? (v > 0 ? '+' : '') + fmt(v)
+                    : fmt(v)}
                 </td>
               );
             })}
-            <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
-              {(() => {
-                const totalDiff = Object.values(row.months).reduce((s, d) => s + ((d.actual || 0) - (d.budget || 0)), 0);
-                return (
-                  <span className={diffColor(totalDiff, isCost)}>
-                    {totalDiff !== 0 ? ((totalDiff > 0 ? '+' : '') + fmt(totalDiff)) : '-'}
-                  </span>
-                );
-              })()}
-            </td>
           </tr>
+          {isExpanded && (
+            <tr>
+              <td colSpan={colSpan} className="p-0">
+                <MonthlyDrillDown row={row} isCost={isCost} onClose={() => setExpandedRow(null)} onConsuntivoClick={onConsuntivoClick} />
+              </td>
+            </tr>
+          )}
         </tbody>
       );
     });
 
-  const renderTotalRows = (label, totals, isCost) => (
+  const renderTotalRow = (label, totals, isCost) => (
     <tbody className="border-b-2 border-surface-border">
-      {/* Budget total */}
       <tr className="bg-surface-dim font-semibold">
-        <td rowSpan={3} className="px-3 py-1 text-sm border-r border-surface-border text-on-surface sticky left-0 z-10 bg-surface-dim align-middle">
+        <td className="px-3 py-2 text-sm border-r border-surface-border text-on-surface sticky left-0 z-10 bg-surface-dim">
           {label}
         </td>
-        <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">B</td>
-        {MONTHS.map((m) => (
-          <td key={m} className="px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums">{fmt(totals[m].budget)}</td>
-        ))}
-        <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">{fmt(totals.total.budget)}</td>
-      </tr>
-      {/* Actual total */}
-      <tr className="bg-surface-dim font-semibold">
-        <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">A</td>
-        {MONTHS.map((m) => (
-          <td key={m} className="px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums">{fmt(totals[m].actual)}</td>
-        ))}
-        <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">{fmt(totals.total.actual)}</td>
-      </tr>
-      {/* Diff total */}
-      <tr className="bg-surface-dim font-semibold">
-        <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">&Delta;</td>
-        {MONTHS.map((m) => (
-          <td key={m} className={`px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums ${diffColor(totals[m].diff, isCost)}`}>
-            {totals[m].diff !== 0 ? ((totals[m].diff > 0 ? '+' : '') + fmt(totals[m].diff)) : '-'}
-          </td>
-        ))}
-        <td className={`px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums ${diffColor(totals.total.diff, isCost)}`}>
-          {totals.total.diff !== 0 ? ((totals.total.diff > 0 ? '+' : '') + fmt(totals.total.diff)) : '-'}
-        </td>
+        {FIELDS.map((f) => {
+          const v = f === 'diff' ? -totals.annual[f] : totals.annual[f];
+          return (
+            <td
+              key={f}
+              className={`px-3 py-2 text-right text-sm bg-surface-dim tabular-nums ${
+                f === 'diff' ? diffColor(v, isCost) : ''
+              }`}
+            >
+              {f === 'diff' && v !== 0
+                ? (v > 0 ? '+' : '') + fmt(v)
+                : fmt(v)}
+            </td>
+          );
+        })}
       </tr>
     </tbody>
   );
 
-  const renderMarginRows = (label, mData) => (
+  const renderMarginRow = (label, totals) => (
     <tbody>
       <tr className="bg-surface-dim font-semibold">
-        <td rowSpan={3} className="px-3 py-1 text-sm border-r border-surface-border text-on-surface sticky left-0 z-10 bg-surface-dim align-middle">
+        <td className="px-3 py-2 text-sm border-r border-surface-border text-on-surface sticky left-0 z-10 bg-surface-dim">
           {label}
         </td>
-        <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">B</td>
-        {MONTHS.map((m) => (
-          <td key={m} className="px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums">{fmt(mData[m].budget)}</td>
-        ))}
-        <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">{fmt(mData.total.budget)}</td>
-      </tr>
-      <tr className="bg-surface-dim font-semibold">
-        <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">A</td>
-        {MONTHS.map((m) => {
-          const color = mData[m].actual > 0 ? 'text-cf-pos' : mData[m].actual < 0 ? 'text-cf-neg' : '';
+        {FIELDS.map((f) => {
+          const v = f === 'diff' ? -totals.annual[f] : totals.annual[f];
+          const color = f === 'diff'
+            ? diffColor(v, false)
+            : v > 0 ? 'text-cf-pos' : v < 0 ? 'text-cf-neg' : '';
           return (
-            <td key={m} className={`px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums ${color}`}>
-              {mData[m].actual !== 0 ? ((mData[m].actual > 0 ? '+' : '') + fmt(mData[m].actual)) : '-'}
+            <td key={f} className={`px-3 py-2 text-right text-sm bg-surface-dim tabular-nums ${color}`}>
+              {v !== 0 ? (v > 0 ? '+' : '') + fmt(v) : fmt(v)}
             </td>
           );
         })}
-        <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">
-          <span className={mData.total.actual > 0 ? 'text-cf-pos' : mData.total.actual < 0 ? 'text-cf-neg' : ''}>
-            {mData.total.actual !== 0 ? ((mData.total.actual > 0 ? '+' : '') + fmt(mData.total.actual)) : '-'}
-          </span>
-        </td>
-      </tr>
-      <tr className="bg-surface-dim font-semibold">
-        <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">&Delta;</td>
-        {MONTHS.map((m) => (
-          <td key={m} className={`px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums ${diffColor(mData[m].diff, false)}`}>
-            {mData[m].diff !== 0 ? ((mData[m].diff > 0 ? '+' : '') + fmt(mData[m].diff)) : '-'}
-          </td>
-        ))}
-        <td className={`px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums ${diffColor(mData.total.diff, false)}`}>
-          {mData.total.diff !== 0 ? ((mData.total.diff > 0 ? '+' : '') + fmt(mData.total.diff)) : '-'}
-        </td>
       </tr>
     </tbody>
   );
@@ -335,16 +180,16 @@ export default function BudgetGrid({ data, year, onUpdate }) {
       <table className="min-w-full text-sm border-collapse">
         <thead>
           <tr className="bg-surface-dim text-on-surface-secondary">
-            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Category</th>
-            <th className="px-1 py-2 text-center text-xs font-medium sticky top-0 z-10 bg-surface-dim w-5"></th>
-            {MONTHS.map((m) => (
-              <th key={m} className="px-2 py-2 text-right text-xs font-medium w-24 sticky top-0 z-10 bg-surface-dim">{m}</th>
+            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Categoria</th>
+            {FIELDS.map((f) => (
+              <th key={f} className={`px-3 py-2 text-right text-xs font-medium w-28 sticky top-0 z-10 bg-surface-dim ${f === 'diff' ? 'border-l border-surface-border' : ''}`}>
+                {FIELD_LABELS[f]}
+              </th>
             ))}
-            <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
           </tr>
         </thead>
 
-        {/* Section header: COSTI */}
+        {/* COSTI */}
         <tbody>
           <tr className="bg-surface-dim">
             <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>
@@ -352,16 +197,12 @@ export default function BudgetGrid({ data, year, onUpdate }) {
             </td>
           </tr>
         </tbody>
+        {renderCategoryRows(data.costs, true, 'cost')}
+        {renderTotalRow('TOTALE COSTI', data.totals.totalCosts, true)}
 
-        {renderCategoryRows(data.costs, true)}
-        {renderTotalRows('TOTALE COSTI', costTotals, true)}
+        <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
-        {/* Spacer */}
-        <tbody>
-          <tr><td colSpan={colSpan} className="py-1"></td></tr>
-        </tbody>
-
-        {/* Section header: RICAVI */}
+        {/* RICAVI */}
         <tbody>
           <tr className="bg-surface-dim">
             <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>
@@ -369,17 +210,363 @@ export default function BudgetGrid({ data, year, onUpdate }) {
             </td>
           </tr>
         </tbody>
+        {renderCategoryRows(data.revenues, false, 'rev')}
+        {renderTotalRow('TOTALE RICAVI', data.totals.totalRevenues, false)}
 
-        {renderCategoryRows(data.revenues, false)}
-        {renderTotalRows('TOTALE RICAVI', revTotals, false)}
+        <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
-        {/* Spacer */}
-        <tbody>
-          <tr><td colSpan={colSpan} className="py-1"></td></tr>
-        </tbody>
-
-        {renderMarginRows('MARGINE OPERATIVO', marginData)}
+        {/* MARGINE */}
+        {renderMarginRow('MARGINE OPERATIVO', data.totals.margin)}
       </table>
+    </div>
+  );
+}
+
+// Expanded monthly breakdown for a single category row
+function MonthlyDrillDown({ row, isCost, onClose, onConsuntivoClick }) {
+  return (
+    <div className="mx-4 my-2 bg-white rounded-xl shadow-elevation-1 p-4">
+      <div className="flex justify-between items-center mb-2">
+        <h4 className="font-semibold text-sm text-on-surface">{row.category}</h4>
+        <button onClick={onClose} className={BUTTON_GHOST}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+          Close
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-surface-dim text-on-surface-secondary">
+              <th className="px-2 py-1.5 text-left text-xs font-medium w-14">Month</th>
+              {FIELDS.map((f) => (
+                <th key={f} className={`px-2 py-1.5 text-right text-xs font-medium w-24 ${f === 'diff' ? 'border-l border-surface-border' : ''}`}>
+                  {FIELD_LABELS[f]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-surface-border">
+            {MONTHS.map((m) => (
+              <tr key={m} className="hover:bg-surface-dim/50 transition-colors">
+                <td className="px-2 py-1.5 text-xs font-medium text-on-surface-secondary">{m}</td>
+                {FIELDS.map((f) => {
+                  const v = f === 'diff' ? -row.months[m][f] : row.months[m][f];
+                  if (f === 'consuntivo') {
+                    return (
+                      <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
+                        <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category)} />
+                      </td>
+                    );
+                  }
+                  return (
+                    <td
+                      key={f}
+                      className={`px-2 py-1.5 text-right text-xs tabular-nums ${
+                        f === 'diff' ? `border-l border-surface-border ${diffColor(v, isCost)}` : ''
+                      }`}
+                    >
+                      {f === 'diff' && v !== 0
+                        ? (v > 0 ? '+' : '') + fmt(v)
+                        : fmt(v)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Monthly Detail View
+// ---------------------------------------------------------------------------
+
+function MonthlyDetail({ data, year, onConsuntivoClick }) {
+  const [scenario, setScenario] = useState('possibile');
+  const [scenarioData, setScenarioData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadScenario = useCallback(async () => {
+    setLoading(true);
+    try {
+      const d = await getBudgetScenario(year, scenario);
+      setScenarioData(d);
+    } catch {
+      setScenarioData(null);
+    }
+    setLoading(false);
+  }, [year, scenario]);
+
+  useEffect(() => { loadScenario(); }, [loadScenario]);
+
+  const colSpan = MONTHS.length + 3; // category + label + 12 months + totale
+
+  // Build a lookup: row → scenarioData values
+  const scenarioMap = {};
+  if (scenarioData) {
+    for (const item of [...scenarioData.costs, ...scenarioData.revenues]) {
+      scenarioMap[item.row] = item;
+    }
+    scenarioMap[BUDGET_TOTAL_COSTS_ROW_FE] = scenarioData.totals.totalCosts;
+    scenarioMap[BUDGET_TOTAL_REVENUES_ROW_FE] = scenarioData.totals.totalRevenues;
+    scenarioMap[BUDGET_MARGIN_ROW_FE] = scenarioData.totals.margin;
+  }
+
+  const renderCategoryRows = (rows, isCost) =>
+    rows.map((row) => {
+      const sRow = scenarioMap[row.row];
+      return (
+        <tbody key={row.category} className="border-b border-surface-border">
+          {/* B (budget from scenario) */}
+          <tr className="hover:bg-surface-dim/50 transition-colors">
+            <td
+              rowSpan={3}
+              className="px-3 py-1 text-sm border-r border-surface-border whitespace-nowrap text-on-surface sticky left-0 z-10 bg-white align-middle"
+            >
+              {row.category}
+            </td>
+            <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">B</td>
+            {MONTHS.map((m) => (
+              <td key={m} className="px-1 py-0.5 text-right text-xs tabular-nums">
+                {fmt(sRow ? sRow.months[m] : 0)}
+              </td>
+            ))}
+            <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
+              {fmt(sRow ? sRow.total : 0)}
+            </td>
+          </tr>
+          {/* A (consuntivo from generale) */}
+          <tr className="hover:bg-surface-dim/50 transition-colors">
+            <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">A</td>
+            {MONTHS.map((m) => (
+              <td key={m} className="px-1 py-0.5 text-right text-xs tabular-nums">
+                <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category)} />
+              </td>
+            ))}
+            <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
+              <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category)} />
+            </td>
+          </tr>
+          {/* Δ (diff: consuntivo - budget) */}
+          <tr className="hover:bg-surface-dim/50 transition-colors">
+            <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">&Delta;</td>
+            {MONTHS.map((m) => {
+              const bVal = sRow ? sRow.months[m] : 0;
+              const aVal = row.months[m].consuntivo;
+              const d = aVal - bVal;
+              return (
+                <td key={m} className={`px-2 py-0.5 text-right text-xs tabular-nums ${diffColor(d, isCost)}`}>
+                  {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
+                </td>
+              );
+            })}
+            <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
+              {(() => {
+                const bTotal = sRow ? sRow.total : 0;
+                const aTotal = row.annual.consuntivo;
+                const d = aTotal - bTotal;
+                return (
+                  <span className={diffColor(d, isCost)}>
+                    {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
+                  </span>
+                );
+              })()}
+            </td>
+          </tr>
+        </tbody>
+      );
+    });
+
+  const renderTotalRows = (label, totalsGen, isCost, totalKey) => {
+    const sRow = scenarioMap[totalKey];
+    return (
+      <tbody className="border-b-2 border-surface-border">
+        <tr className="bg-surface-dim font-semibold">
+          <td rowSpan={3} className="px-3 py-1 text-sm border-r border-surface-border text-on-surface sticky left-0 z-10 bg-surface-dim align-middle">{label}</td>
+          <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">B</td>
+          {MONTHS.map((m) => (
+            <td key={m} className="px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums">{fmt(sRow ? sRow.months[m] : 0)}</td>
+          ))}
+          <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">{fmt(sRow ? sRow.total : 0)}</td>
+        </tr>
+        <tr className="bg-surface-dim font-semibold">
+          <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">A</td>
+          {MONTHS.map((m) => (
+            <td key={m} className="px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums">{fmt(totalsGen.months[m].consuntivo)}</td>
+          ))}
+          <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">{fmt(totalsGen.annual.consuntivo)}</td>
+        </tr>
+        <tr className="bg-surface-dim font-semibold">
+          <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">&Delta;</td>
+          {MONTHS.map((m) => {
+            const d = totalsGen.months[m].consuntivo - (sRow ? sRow.months[m] : 0);
+            return (
+              <td key={m} className={`px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums ${diffColor(d, isCost)}`}>
+                {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
+              </td>
+            );
+          })}
+          <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">
+            {(() => {
+              const d = totalsGen.annual.consuntivo - (sRow ? sRow.total : 0);
+              return <span className={diffColor(d, isCost)}>{d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}</span>;
+            })()}
+          </td>
+        </tr>
+      </tbody>
+    );
+  };
+
+  return (
+    <div>
+      {/* Scenario picker */}
+      <div className="px-4 py-2 flex items-center gap-2">
+        <span className="text-xs text-on-surface-secondary font-medium mr-1">Scenario:</span>
+        {SCENARIOS.map((s) => (
+          <button
+            key={s}
+            onClick={() => setScenario(s)}
+            className={`${BUTTON_PILL_BASE} ${
+              scenario === s
+                ? 'bg-primary-light text-primary border-primary/30'
+                : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+            }`}
+          >
+            {SCENARIO_LABELS[s]}
+          </button>
+        ))}
+        {loading && (
+          <svg className="animate-spin h-3.5 w-3.5 text-primary ml-2" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        )}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-surface-dim text-on-surface-secondary">
+              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Categoria</th>
+              <th className="px-1 py-2 text-center text-xs font-medium sticky top-0 z-10 bg-surface-dim w-5"></th>
+              {MONTHS.map((m) => (
+                <th key={m} className="px-2 py-2 text-right text-xs font-medium w-24 sticky top-0 z-10 bg-surface-dim">{m}</th>
+              ))}
+              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr className="bg-surface-dim">
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>COSTI</td>
+            </tr>
+          </tbody>
+          {renderCategoryRows(data.costs, true)}
+          {renderTotalRows('TOTALE COSTI', data.totals.totalCosts, true, BUDGET_TOTAL_COSTS_ROW_FE)}
+
+          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+
+          <tbody>
+            <tr className="bg-surface-dim">
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>RICAVI</td>
+            </tr>
+          </tbody>
+          {renderCategoryRows(data.revenues, false)}
+          {renderTotalRows('TOTALE RICAVI', data.totals.totalRevenues, false, BUDGET_TOTAL_REVENUES_ROW_FE)}
+
+          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+
+          {renderTotalRows('MARGINE OPERATIVO', data.totals.margin, false, BUDGET_MARGIN_ROW_FE)}
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Row constants matching server (used for scenario data lookup)
+const BUDGET_TOTAL_COSTS_ROW_FE = 16;
+const BUDGET_TOTAL_REVENUES_ROW_FE = 25;
+const BUDGET_MARGIN_ROW_FE = 27;
+
+// ---------------------------------------------------------------------------
+// Main BudgetGrid
+// ---------------------------------------------------------------------------
+
+export default function BudgetGrid({ data, year, entries, budgetCategories, onAddEntry, onUpdateEntry, onDeleteEntry, entriesLoading }) {
+  const [view, setView] = useState('annual');
+  const [entriesMonth, setEntriesMonth] = useState(undefined);
+  const [entriesCategory, setEntriesCategory] = useState(undefined);
+
+  const navigateToEntries = (month, category) => {
+    setEntriesMonth(month);
+    setEntriesCategory(category);
+    setView('entries');
+  };
+
+  // Clear initial filters when user manually switches to entries tab
+  const switchToEntries = () => {
+    setEntriesMonth(undefined);
+    setEntriesCategory(undefined);
+    setView('entries');
+  };
+
+  if (!data) return <BudgetSkeleton />;
+
+  return (
+    <div>
+      {/* Sub-view toggle */}
+      <div className="px-4 py-2 flex items-center gap-2 border-b border-surface-border">
+        <button
+          onClick={() => setView('annual')}
+          className={`${BUTTON_PILL_BASE} ${
+            view === 'annual'
+              ? 'bg-primary-light text-primary border-primary/30'
+              : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+          }`}
+        >
+          Annual Summary
+        </button>
+        <button
+          onClick={() => setView('monthly')}
+          className={`${BUTTON_PILL_BASE} ${
+            view === 'monthly'
+              ? 'bg-primary-light text-primary border-primary/30'
+              : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+          }`}
+        >
+          Monthly Detail
+        </button>
+        <button
+          onClick={switchToEntries}
+          className={`${BUTTON_PILL_BASE} ${
+            view === 'entries'
+              ? 'bg-primary-light text-primary border-primary/30'
+              : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+          }`}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>edit_note</span>
+          Entries
+        </button>
+      </div>
+
+      {view === 'annual' && <AnnualSummary data={data} onConsuntivoClick={navigateToEntries} />}
+      {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={navigateToEntries} />}
+      {view === 'entries' && (
+        <BudgetEntries
+          entries={entries || []}
+          year={year}
+          budgetCategories={budgetCategories || []}
+          onAdd={onAddEntry}
+          onUpdate={onUpdateEntry}
+          onDelete={onDeleteEntry}
+          loading={entriesLoading}
+          initialMonth={entriesMonth}
+          initialCategory={entriesCategory}
+        />
+      )}
     </div>
   );
 }

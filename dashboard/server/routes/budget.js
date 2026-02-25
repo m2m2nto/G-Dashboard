@@ -1,39 +1,41 @@
 import { Router } from 'express';
-import { readBudget, listBudgetYears, updateBudgetCell } from '../services/excel.js';
+import { readBudgetGenerale, readBudgetScenario, listBudgetYears } from '../services/excel.js';
 
 const router = Router();
 
 router.get('/years', async (_req, res) => {
   try {
     const years = await listBudgetYears();
-    res.json(years);
+    res.json({ years });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/:year', async (req, res) => {
-  const year = req.params.year;
   try {
-    const data = await readBudget(year);
+    const data = await readBudgetGenerale(req.params.year);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.put('/:year/cell', async (req, res) => {
-  const { year } = req.params;
-  const { row, monthIndex, field, value } = req.body;
-  if (row == null || monthIndex == null || !field) {
-    return res.status(400).json({ error: 'Missing required fields: row, monthIndex, field' });
-  }
+router.get('/:year/scenario/:scenario', async (req, res) => {
   try {
-    const result = await updateBudgetCell(year, Number(row), Number(monthIndex), field, value);
-    res.json(result);
+    const data = await readBudgetScenario(req.params.year, req.params.scenario, 'budget');
+    res.json(data);
   } catch (err) {
-    const status = err.message.includes('formula') || err.message.includes('Invalid') ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:year/cf/:scenario', async (req, res) => {
+  try {
+    const data = await readBudgetScenario(req.params.year, req.params.scenario, 'cf');
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
