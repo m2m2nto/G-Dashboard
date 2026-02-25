@@ -1866,3 +1866,150 @@ export function updateBudgetConsuntivoBatch(year, aggregation) {
     return { ok: true };
   });
 }
+
+/**
+ * Batch-write scenario cells to both the scenario sheet and the generale sheet.
+ * Only called for seeded scenarios (certo, possibile, ottimistico).
+ *
+ * @param {string|number} year
+ * @param {'certo'|'possibile'|'ottimistico'} scenario
+ * @param {Map<string, number>} aggregation — keys are "row-monthIndex", values are summed amounts
+ */
+export function updateBudgetScenarioBatch(year, scenario, aggregation) {
+  const filePath = getBudgetFile();
+  if (!filePath) throw new Error('Budget file not configured');
+
+  const scenarioOffset = { certo: 0, possibile: 1, ottimistico: 2 }[scenario];
+  if (scenarioOffset == null) throw new Error(`Invalid scenario: ${scenario}`);
+
+  const formulaRows = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
+
+  return withLock(filePath, async () => {
+    const fileBuf = await readFile(filePath);
+    const zip = await JSZip.loadAsync(fileBuf);
+
+    // Build list of data rows (cost + revenue, skip formula rows)
+    const allRows = [];
+    for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
+      if (!formulaRows.includes(r)) allRows.push(r);
+    }
+    for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
+      if (!formulaRows.includes(r)) allRows.push(r);
+    }
+
+    // --- Scenario sheet ---
+    const scenarioSheetName = BUDGET_SHEET_NAMES[scenario](Number(year));
+    const scenarioSheetPath = await resolveBudgetSheetPath(zip, scenarioSheetName);
+    let scenarioXml = await zip.file(scenarioSheetPath).async('string');
+
+    // Zero out all data cells in scenario sheet (cols C–N, rows 3–14 & 19–23)
+    for (const r of allRows) {
+      for (let mi = 0; mi < 12; mi++) {
+        const col = BUDGET_SCENARIO_MONTH_START_COL + mi; // C(3)..N(14)
+        const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+        scenarioXml = xmlSetCell(scenarioXml, cellRef, 0);
+      }
+    }
+    // Write aggregated values to scenario sheet
+    for (const [key, amount] of aggregation) {
+      const [rowStr, miStr] = key.split('-');
+      const r = Number(rowStr);
+      const mi = Number(miStr);
+      if (formulaRows.includes(r)) continue;
+      const col = BUDGET_SCENARIO_MONTH_START_COL + mi;
+      const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+      scenarioXml = xmlSetCell(scenarioXml, cellRef, amount);
+    }
+    zip.file(scenarioSheetPath, scenarioXml);
+
+    // --- Generale sheet ---
+    const generaleSheetName = BUDGET_SHEET_NAMES.generale(Number(year));
+    const generaleSheetPath = await resolveBudgetSheetPath(zip, generaleSheetName);
+    let generaleXml = await zip.file(generaleSheetPath).async('string');
+
+    // Zero out scenario column in generale sheet
+    for (const r of allRows) {
+      for (let mi = 0; mi < 12; mi++) {
+        const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + scenarioOffset;
+        const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+        generaleXml = xmlSetCell(generaleXml, cellRef, 0);
+      }
+    }
+    // Write aggregated values to generale sheet
+    for (const [key, amount] of aggregation) {
+      const [rowStr, miStr] = key.split('-');
+      const r = Number(rowStr);
+      const mi = Number(miStr);
+      if (formulaRows.includes(r)) continue;
+      const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + scenarioOffset;
+      const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+      generaleXml = xmlSetCell(generaleXml, cellRef, amount);
+    }
+    zip.file(generaleSheetPath, generaleXml);
+
+    const outBuf = await zip.generateAsync({ type: 'nodebuffer' });
+    await writeFile(filePath, outBuf);
+    return { ok: true };
+  });
+}
+
+/**
+ * Read raw cell values from a scenario sheet for seeding.
+ * Returns Map<"row-monthIndex", value> of all non-zero data cells.
+ *
+ * @param {string|number} year
+ * @param {'certo'|'possibile'|'ottimistico'} scenario
+ * @returns {Promise<Map<string, number>>}
+ */
+export async function readBudgetScenarioRaw(year, scenario) {
+  const filePath = getBudgetFile();
+  if (!filePath) throw new Error('Budget file not configured');
+
+  const formulaRows = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
+
+  const fileBuf = await readFile(filePath);
+  const zip = await JSZip.loadAsync(fileBuf);
+  const sheetName = BUDGET_SHEET_NAMES[scenario](Number(year));
+  const sheetPath = await resolveBudgetSheetPath(zip, sheetName);
+  const sheetXml = await zip.file(sheetPath).async('string');
+
+  const getCellValue = buildCellEvaluator(sheetXml);
+
+  // Read category names from column B via ExcelJS
+  const categoryNames = new Map();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(fileBuf);
+  const ws = wb.getWorksheet(sheetName);
+  if (ws) {
+    for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
+      const name = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL));
+      if (name) categoryNames.set(r, String(name));
+    }
+    for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
+      const name = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL));
+      if (name) categoryNames.set(r, String(name));
+    }
+  }
+
+  const result = new Map();
+  const allRows = [];
+  for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
+    if (!formulaRows.includes(r)) allRows.push(r);
+  }
+  for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
+    if (!formulaRows.includes(r)) allRows.push(r);
+  }
+
+  for (const r of allRows) {
+    for (let mi = 0; mi < 12; mi++) {
+      const col = BUDGET_SCENARIO_MONTH_START_COL + mi; // C(3)..N(14)
+      const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+      const value = getCellValue(cellRef);
+      if (value && value !== 0) {
+        result.set(`${r}-${mi}`, value);
+      }
+    }
+  }
+
+  return { values: result, categoryNames };
+}

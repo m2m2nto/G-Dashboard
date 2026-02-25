@@ -495,14 +495,16 @@ const BUDGET_MARGIN_ROW_FE = 27;
 // Main BudgetGrid
 // ---------------------------------------------------------------------------
 
-export default function BudgetGrid({ data, year, entries, budgetCategories, onAddEntry, onUpdateEntry, onDeleteEntry, entriesLoading }) {
+export default function BudgetGrid({ data, year, entries, budgetCategories, onAddEntry, onUpdateEntry, onDeleteEntry, onSeedEntries, entriesLoading, seededScenarios }) {
   const [view, setView] = useState('annual');
   const [entriesMonth, setEntriesMonth] = useState(undefined);
   const [entriesCategory, setEntriesCategory] = useState(undefined);
+  const [entriesScenario, setEntriesScenario] = useState(undefined);
 
-  const navigateToEntries = (month, category) => {
+  const navigateToEntries = (month, category, scenario) => {
     setEntriesMonth(month);
     setEntriesCategory(category);
+    setEntriesScenario(scenario || 'consuntivo');
     setView('entries');
   };
 
@@ -510,6 +512,7 @@ export default function BudgetGrid({ data, year, entries, budgetCategories, onAd
   const switchToEntries = () => {
     setEntriesMonth(undefined);
     setEntriesCategory(undefined);
+    setEntriesScenario(undefined);
     setView('entries');
   };
 
@@ -562,9 +565,12 @@ export default function BudgetGrid({ data, year, entries, budgetCategories, onAd
           onAdd={onAddEntry}
           onUpdate={onUpdateEntry}
           onDelete={onDeleteEntry}
+          onSeed={onSeedEntries}
           loading={entriesLoading}
           initialMonth={entriesMonth}
           initialCategory={entriesCategory}
+          initialScenario={entriesScenario}
+          seededScenarios={seededScenarios}
         />
       )}
     </div>

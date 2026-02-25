@@ -27,6 +27,7 @@ import {
   addBudgetEntry,
   updateBudgetEntry,
   deleteBudgetEntry,
+  seedBudgetEntries,
   getCategories,
   getElements,
   getElementsDetail,
@@ -65,6 +66,7 @@ export default function App() {
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetEntries, setBudgetEntries] = useState([]);
   const [budgetEntriesLoading, setBudgetEntriesLoading] = useState(false);
+  const [seededScenarios, setSeededScenarios] = useState({ certo: false, possibile: false, ottimistico: false });
   const [elementsDetail, setElementsDetail] = useState([]);
   const [elementsLoading, setElementsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -183,6 +185,7 @@ export default function App() {
     try {
       const data = await getBudgetEntries(budgetYear);
       setBudgetEntries(data.entries || []);
+      if (data.seeded) setSeededScenarios(data.seeded);
     } catch (err) {
       pushToast('error', 'Failed to load budget entries: ' + err.message);
     }
@@ -219,6 +222,17 @@ export default function App() {
       await Promise.all([loadBudgetEntries(), loadBudget()]);
     } catch (err) {
       pushToast('error', err.message || 'Failed to delete entry');
+    }
+  };
+
+  const handleSeedBudgetEntries = async (scenario) => {
+    try {
+      const result = await seedBudgetEntries(budgetYear, scenario);
+      pushToast('success', `Imported ${result.count} ${scenario} entries from Excel`);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to seed entries');
+      throw err;
     }
   };
 
@@ -753,7 +767,9 @@ export default function App() {
               onAddEntry={handleAddBudgetEntry}
               onUpdateEntry={handleUpdateBudgetEntry}
               onDeleteEntry={handleDeleteBudgetEntry}
+              onSeedEntries={handleSeedBudgetEntries}
               entriesLoading={budgetEntriesLoading}
+              seededScenarios={seededScenarios}
             />
           </div>
         )}
