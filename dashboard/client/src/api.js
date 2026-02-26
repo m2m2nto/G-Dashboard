@@ -13,6 +13,8 @@ export const getTransactionYears = () => request('/transactions/years');
 
 export const getTransactions = (year, month) => request(`/transactions/${year}/${month}`);
 
+export const getTransactionBudgetSummary = (year) => request(`/transactions/budget-summary/${year}`);
+
 export const addTransaction = (year, month, data) =>
   request(`/transactions/${year}/${month}`, {
     method: 'POST',
@@ -69,6 +71,8 @@ export const updateElementCategory = (name, category) =>
 
 export const compactTransactions = (year, month) =>
   request(`/transactions/${year}/${month}/compact`, { method: 'POST' });
+
+export const getBudgetCategories = (year) => request(`/metadata/budget-categories?year=${encodeURIComponent(year)}`);
 
 export const getActivity = () => request('/activity');
 

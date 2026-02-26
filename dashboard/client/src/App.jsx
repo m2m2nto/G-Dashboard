@@ -5,6 +5,9 @@ import TransactionTable from './components/TransactionTable.jsx';
 import TransactionForm from './components/TransactionForm.jsx';
 import CashFlowGrid from './components/CashFlowGrid.jsx';
 import BudgetGrid from './components/BudgetGrid.jsx';
+import BudgetEntries from './components/BudgetEntries.jsx';
+import BudgetCharts from './components/BudgetCharts.jsx';
+import CashFlowProjection from './components/CashFlowProjection.jsx';
 import ElementsTable from './components/ElementsTable.jsx';
 import ChartsView from './components/ChartsView.jsx';
 import ActivityLog from './components/ActivityLog.jsx';
@@ -15,6 +18,7 @@ import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE, BUTTON_
 import {
   getTransactions,
   getTransactionYears,
+  getTransactionBudgetSummary,
   addTransaction,
   updateTransaction,
   deleteTransaction,
@@ -28,6 +32,7 @@ import {
   updateBudgetEntry,
   deleteBudgetEntry,
   seedBudgetEntries,
+  getBudgetCategories,
   getCategories,
   getElements,
   getElementsDetail,
@@ -66,7 +71,9 @@ export default function App() {
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetEntries, setBudgetEntries] = useState([]);
   const [budgetEntriesLoading, setBudgetEntriesLoading] = useState(false);
+  const [txBudgetSummary, setTxBudgetSummary] = useState(null);
   const [seededScenarios, setSeededScenarios] = useState({ certo: false, possibile: false, ottimistico: false });
+  const [budgetCategoriesList, setBudgetCategoriesList] = useState([]);
   const [elementsDetail, setElementsDetail] = useState([]);
   const [elementsLoading, setElementsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -127,6 +134,7 @@ export default function App() {
     getCashFlowYears().then(setCfYears).catch((e) => pushToast('error', 'Failed to load years: ' + e.message));
     getBudgetYears().then(setBudgetYears).catch(() => {});
     getTransactionYears().then(setTxYears).catch((e) => pushToast('error', 'Failed to load transaction years: ' + e.message));
+    getBudgetCategories(txYear).then(setBudgetCategoriesList).catch(() => {});
     loadUsers();
   }, [pushToast, loadUsers]);
 
@@ -148,6 +156,12 @@ export default function App() {
   useEffect(() => {
     if (tab === 'transactions') loadTransactions();
   }, [txYear, month, tab, loadTransactions]);
+
+  useEffect(() => {
+    if (needsSetup === false) {
+      getBudgetCategories(txYear).then(setBudgetCategoriesList).catch(() => {});
+    }
+  }, [txYear, needsSetup]);
 
   const loadCashFlow = useCallback(async () => {
     setCfLoading(true);
@@ -177,7 +191,7 @@ export default function App() {
   }, [budgetYear]);
 
   useEffect(() => {
-    if (tab === 'budget') loadBudget();
+    if (tab === 'budget' || tab === 'budget-charts' || tab === 'cf-projection' || tab === 'budget-entries') loadBudget();
   }, [tab, budgetYear, loadBudget]);
 
   const loadBudgetEntries = useCallback(async () => {
@@ -193,8 +207,14 @@ export default function App() {
   }, [budgetYear]);
 
   useEffect(() => {
-    if (tab === 'budget') loadBudgetEntries();
+    if (tab === 'budget' || tab === 'cf-projection' || tab === 'budget-entries') loadBudgetEntries();
   }, [tab, budgetYear, loadBudgetEntries]);
+
+  useEffect(() => {
+    if (tab === 'cf-projection') {
+      getTransactionBudgetSummary(budgetYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null));
+    }
+  }, [tab, budgetYear]);
 
   const handleAddBudgetEntry = async (data) => {
     try {
@@ -292,9 +312,10 @@ export default function App() {
     getCashFlowYears().then(setCfYears).catch(() => {});
     getBudgetYears().then(setBudgetYears).catch(() => {});
     getTransactionYears().then(setTxYears).catch(() => {});
+    getBudgetCategories(txYear).then(setBudgetCategoriesList).catch(() => {});
     if (tab === 'transactions') loadTransactions();
     if (tab === 'cashflow') loadCashFlow();
-    if (tab === 'budget') { loadBudget(); loadBudgetEntries(); }
+    if (tab === 'budget' || tab === 'budget-charts' || tab === 'cf-projection' || tab === 'budget-entries') { loadBudget(); loadBudgetEntries(); }
     if (tab === 'cashflow' && cfSubTab === 'elements') loadElements();
     if (tab === 'charts') loadCharts();
     if (tab === 'activity') loadActivity();
@@ -484,6 +505,42 @@ export default function App() {
               <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
             )}
           </button>
+          <button
+            onClick={() => setTab('budget-charts')}
+            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
+              tab === 'budget-charts' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>bar_chart</span>
+            Budget Charts
+            {tab === 'budget-charts' && (
+              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab('cf-projection')}
+            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
+              tab === 'cf-projection' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>payments</span>
+            CF Projection
+            {tab === 'cf-projection' && (
+              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab('budget-entries')}
+            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
+              tab === 'budget-entries' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>edit_note</span>
+            Entries
+            {tab === 'budget-entries' && (
+              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
+            )}
+          </button>
           <div className="ml-auto flex items-center gap-1">
             <UserSwitcher
               users={users}
@@ -604,6 +661,7 @@ export default function App() {
                   categories={categories}
                   elements={elements}
                   categoryHints={categoryHints}
+                  budgetCategories={budgetCategoriesList}
                   onSubmit={async (data) => {
                     const ok = await handleAddTransaction(data);
                     if (ok) setShowForm(false);
@@ -619,6 +677,7 @@ export default function App() {
               categories={categories}
               elements={elements}
               categoryHints={categoryHints}
+              budgetCategories={budgetCategoriesList}
               onUpdate={handleUpdateTransaction}
               onDelete={handleDeleteTransaction}
               onToast={pushToast}
@@ -759,16 +818,75 @@ export default function App() {
             <BudgetGrid
               data={budget}
               year={budgetYear}
-              entries={budgetEntries}
+            />
+          </div>
+        )}
+
+        {/* Budget Charts tab */}
+        {tab === 'budget-charts' && (
+          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-3">
+              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
+              {budgetLoading && (
+                <span className="text-sm text-on-surface-secondary flex items-center gap-2">
+                  <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Loading...
+                </span>
+              )}
+            </div>
+            <BudgetCharts data={budget} />
+          </div>
+        )}
+
+        {/* CF Projection tab */}
+        {tab === 'cf-projection' && (
+          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-3">
+              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
+              {budgetEntriesLoading && (
+                <span className="text-sm text-on-surface-secondary flex items-center gap-2">
+                  <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Loading...
+                </span>
+              )}
+            </div>
+            <CashFlowProjection entries={budgetEntries} budget={budget} txConsuntivo={txBudgetSummary} />
+          </div>
+        )}
+
+        {/* Budget Entries tab */}
+        {tab === 'budget-entries' && (
+          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+            <div className="px-4 py-3 flex items-center gap-3">
+              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
+              {budgetEntriesLoading && (
+                <span className="text-sm text-on-surface-secondary flex items-center gap-2">
+                  <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Loading...
+                </span>
+              )}
+            </div>
+            <BudgetEntries
+              entries={budgetEntries || []}
+              year={budgetYear}
               budgetCategories={budget ? [
                 ...budget.costs.map((c) => ({ category: c.category, row: c.row, type: 'cost' })),
                 ...budget.revenues.map((c) => ({ category: c.category, row: c.row, type: 'revenue' })),
               ] : []}
-              onAddEntry={handleAddBudgetEntry}
-              onUpdateEntry={handleUpdateBudgetEntry}
-              onDeleteEntry={handleDeleteBudgetEntry}
-              onSeedEntries={handleSeedBudgetEntries}
-              entriesLoading={budgetEntriesLoading}
+              onAdd={handleAddBudgetEntry}
+              onUpdate={handleUpdateBudgetEntry}
+              onDelete={handleDeleteBudgetEntry}
+              onSeed={handleSeedBudgetEntries}
+              loading={budgetEntriesLoading}
               seededScenarios={seededScenarios}
             />
           </div>

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getBudgetScenario } from '../api.js';
-import BudgetEntries from './BudgetEntries.jsx';
 import { BUTTON_GHOST, BUTTON_PILL_BASE } from '../ui.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
@@ -495,26 +494,8 @@ const BUDGET_MARGIN_ROW_FE = 27;
 // Main BudgetGrid
 // ---------------------------------------------------------------------------
 
-export default function BudgetGrid({ data, year, entries, budgetCategories, onAddEntry, onUpdateEntry, onDeleteEntry, onSeedEntries, entriesLoading, seededScenarios }) {
+export default function BudgetGrid({ data, year }) {
   const [view, setView] = useState('annual');
-  const [entriesMonth, setEntriesMonth] = useState(undefined);
-  const [entriesCategory, setEntriesCategory] = useState(undefined);
-  const [entriesScenario, setEntriesScenario] = useState(undefined);
-
-  const navigateToEntries = (month, category, scenario) => {
-    setEntriesMonth(month);
-    setEntriesCategory(category);
-    setEntriesScenario(scenario || 'consuntivo');
-    setView('entries');
-  };
-
-  // Clear initial filters when user manually switches to entries tab
-  const switchToEntries = () => {
-    setEntriesMonth(undefined);
-    setEntriesCategory(undefined);
-    setEntriesScenario(undefined);
-    setView('entries');
-  };
 
   if (!data) return <BudgetSkeleton />;
 
@@ -542,37 +523,10 @@ export default function BudgetGrid({ data, year, entries, budgetCategories, onAd
         >
           Monthly Detail
         </button>
-        <button
-          onClick={switchToEntries}
-          className={`${BUTTON_PILL_BASE} ${
-            view === 'entries'
-              ? 'bg-primary-light text-primary border-primary/30'
-              : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-          }`}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>edit_note</span>
-          Entries
-        </button>
       </div>
 
-      {view === 'annual' && <AnnualSummary data={data} onConsuntivoClick={navigateToEntries} />}
-      {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={navigateToEntries} />}
-      {view === 'entries' && (
-        <BudgetEntries
-          entries={entries || []}
-          year={year}
-          budgetCategories={budgetCategories || []}
-          onAdd={onAddEntry}
-          onUpdate={onUpdateEntry}
-          onDelete={onDeleteEntry}
-          onSeed={onSeedEntries}
-          loading={entriesLoading}
-          initialMonth={entriesMonth}
-          initialCategory={entriesCategory}
-          initialScenario={entriesScenario}
-          seededScenarios={seededScenarios}
-        />
-      )}
+      {view === 'annual' && <AnnualSummary data={data} onConsuntivoClick={() => {}} />}
+      {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={() => {}} />}
     </div>
   );
 }

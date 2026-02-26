@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readCashFlowCategories, readElements, readElementsDetail, getCategoryHints, updateElementCategory } from '../services/excel.js';
+import { readCashFlowCategories, readElements, readElementsDetail, getCategoryHints, updateElementCategory, readBudgetGenerale } from '../services/excel.js';
 import { CATEGORY_TO_CF_ROW } from '../config.js';
 import { appendEntry } from '../services/audit.js';
 
@@ -60,6 +60,24 @@ router.put('/elements/:name/category', async (req, res) => {
     }
     res.json(result);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/budget-categories', async (req, res) => {
+  try {
+    const year = req.query.year || String(new Date().getFullYear());
+    const data = await readBudgetGenerale(year);
+    const categories = [
+      ...data.costs.map((c) => ({ category: c.category, row: c.row, type: 'cost' })),
+      ...data.revenues.map((c) => ({ category: c.category, row: c.row, type: 'revenue' })),
+    ];
+    res.json(categories);
+  } catch (err) {
+    // If budget file not configured, return empty array instead of error
+    if (err.message?.includes('not configured')) {
+      return res.json([]);
+    }
     res.status(500).json({ error: err.message });
   }
 });

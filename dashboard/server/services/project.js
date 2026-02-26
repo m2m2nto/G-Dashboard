@@ -151,6 +151,7 @@ export function openProject(dir) {
   }
 
   _manifest = manifest;
+  _activeUser = manifest.activeUser || null;
   updateSettings({ lastProjectDir: dir });
   return manifest;
 }
@@ -211,9 +212,12 @@ export function addUser(name) {
   if (!_manifest.users) _manifest.users = [];
   if (_manifest.users.includes(trimmed)) throw new Error('User already exists');
   _manifest.users.push(trimmed);
-  writeManifest(_projectDir, _manifest);
   // Auto-select the new user if none is active
-  if (!_activeUser) _activeUser = trimmed;
+  if (!_activeUser) {
+    _activeUser = trimmed;
+    _manifest.activeUser = trimmed;
+  }
+  writeManifest(_projectDir, _manifest);
   return _manifest.users;
 }
 
@@ -224,11 +228,16 @@ export function getActiveUser() {
 export function setActiveUser(name) {
   if (!name) {
     _activeUser = null;
-    return null;
+  } else {
+    const users = getUsers();
+    if (!users.includes(name)) throw new Error('User not found');
+    _activeUser = name;
   }
-  const users = getUsers();
-  if (!users.includes(name)) throw new Error('User not found');
-  _activeUser = name;
+  // Persist to manifest so the selection survives restarts
+  if (_manifest && _projectDir) {
+    _manifest.activeUser = _activeUser;
+    writeManifest(_projectDir, _manifest);
+  }
   return _activeUser;
 }
 

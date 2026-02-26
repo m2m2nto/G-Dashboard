@@ -5,6 +5,10 @@ const ACTION_BADGES = {
   'cashflow.sync': { label: 'Synced', color: 'bg-amber-100 text-amber-700' },
   'cashflow.sync-all': { label: 'Sync All', color: 'bg-amber-100 text-amber-700' },
   'element.category': { label: 'Category', color: 'bg-purple-100 text-purple-700' },
+  'budget.add': { label: 'Budget +', color: 'bg-status-positive/15 text-status-positive' },
+  'budget.update': { label: 'Budget \u2715', color: 'bg-primary-light text-primary' },
+  'budget.delete': { label: 'Budget \u2212', color: 'bg-status-negative/15 text-status-negative' },
+  'budget.seed': { label: 'Seed', color: 'bg-amber-100 text-amber-700' },
 };
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
@@ -53,6 +57,18 @@ function describe(entry) {
       const to = details?.to || 'none';
       return `${details?.element}: ${from} \u2192 ${to}`;
     }
+    case 'budget.add': {
+      const amt = details?.amount ? formatAmount(details.amount) : '';
+      return [details?.description, details?.category, amt, details?.scenario].filter(Boolean).join(' \u2014 ');
+    }
+    case 'budget.update': {
+      const amt = details?.amount ? formatAmount(details.amount) : '';
+      return [details?.description, details?.category, amt, details?.scenario].filter(Boolean).join(' \u2014 ');
+    }
+    case 'budget.delete':
+      return details?.description || details?.id || 'Entry deleted';
+    case 'budget.seed':
+      return `Seeded ${details?.scenario || 'scenario'}${details?.count != null ? ` (${details.count} entries)` : ''}`;
     default:
       return action;
   }
