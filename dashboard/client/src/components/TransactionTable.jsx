@@ -15,7 +15,6 @@ function SkeletonRow() {
       <td className="px-3 py-2.5"><div className="skeleton h-4 w-20 ml-auto" /></td>
       <td className="px-3 py-2.5"><div className="skeleton h-4 w-24 ml-auto" /></td>
       <td className="px-3 py-2.5"><div className="skeleton h-4 w-16" /></td>
-      <td className="px-3 py-2.5"><div className="skeleton h-4 w-16" /></td>
       <td className="px-3 py-2.5" />
     </tr>
   );
@@ -27,7 +26,6 @@ export default function TransactionTable({
   categories,
   elements,
   categoryHints,
-  budgetCategories,
   onUpdate,
   onDelete,
   onToast,
@@ -55,7 +53,7 @@ export default function TransactionTable({
         <table className="min-w-full">
           <thead>
             <tr className="border-b border-surface-border bg-surface-dim">
-              {['Date', 'Type', 'Transaction', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Cash Flow', 'Budget Cat.', ''].map((h, i) => (
+              {['Date', 'Type', 'Transaction', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Cash Flow', ''].map((h, i) => (
                 <th key={i} className={`px-3 py-2 text-left text-xs font-medium text-on-surface-secondary ${i === 0 ? 'sticky top-0 left-0 z-20' : 'sticky top-0 z-10'} bg-surface-dim ${i >= 5 && i <= 7 ? 'text-right' : ''}`}>{h}</th>
               ))}
             </tr>
@@ -103,8 +101,6 @@ export default function TransactionTable({
       outflow: tx.outflow ?? '',
       cashFlow: tx.cashFlow || '',
       comments: tx.comments || '',
-      budgetCategory: tx.budgetCategory || '',
-      budgetRow: tx.budgetRow ?? '',
     });
   };
 
@@ -131,11 +127,6 @@ export default function TransactionTable({
       cashFlowManual.current = true;
       setCfHighlight(false);
       setEditData((prev) => ({ ...prev, cashFlow: value }));
-      return;
-    }
-    if (field === 'budgetCategory') {
-      const cat = (budgetCategories || []).find((c) => c.category === value);
-      setEditData((prev) => ({ ...prev, budgetCategory: value, budgetRow: cat ? cat.row : '' }));
       return;
     }
     setEditData((prev) => {
@@ -216,7 +207,6 @@ export default function TransactionTable({
               <td className="px-3 py-2"></td>
               <td className="px-3 py-2"></td>
               <td className="px-3 py-2"></td>
-              <td className="px-3 py-2"></td>
             </tr>
             {/* Column headers */}
             <tr className="border-b border-surface-border bg-surface-dim">
@@ -229,7 +219,6 @@ export default function TransactionTable({
               <th className="px-3 py-2 text-right text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Outflow</th>
               <th className="px-3 py-2 text-right text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Balance</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Cash Flow</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Budget Cat.</th>
               <th className="px-3 py-2 w-24 sticky top-0 z-10 bg-surface-dim"></th>
             </tr>
           </thead>
@@ -304,34 +293,6 @@ export default function TransactionTable({
                         );
                       })()}
                     </td>
-                    <td className="px-2 py-1.5">
-                      {(() => {
-                        const editFlow = Number(editData.inflow) > 0 ? 'inflow' : Number(editData.outflow) > 0 ? 'outflow' : null;
-                        return (
-                      <select
-                        value={editData.budgetCategory}
-                        onChange={(e) => handleChange('budgetCategory', e.target.value)}
-                        className={inputClass}
-                      >
-                        <option value="">-- None --</option>
-                        {(!editFlow || editFlow === 'outflow') && (
-                        <optgroup label="Costs">
-                          {(budgetCategories || []).filter((c) => c.type === 'cost').map((c) => (
-                            <option key={c.row} value={c.category}>{c.category}</option>
-                          ))}
-                        </optgroup>
-                        )}
-                        {(!editFlow || editFlow === 'inflow') && (
-                        <optgroup label="Revenues">
-                          {(budgetCategories || []).filter((c) => c.type === 'revenue').map((c) => (
-                            <option key={c.row} value={c.category}>{c.category}</option>
-                          ))}
-                        </optgroup>
-                        )}
-                      </select>
-                        );
-                      })()}
-                    </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <div className="flex items-center gap-1">
                         <button
@@ -377,7 +338,6 @@ export default function TransactionTable({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-xs text-on-surface-tertiary">{tx.budgetCategory || '\u2014'}</td>
                   <td className="px-2 py-2 whitespace-nowrap text-right">
                     <span className="inline-flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button

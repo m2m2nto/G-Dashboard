@@ -39,6 +39,11 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
+      width: {
+        sidebar: '200px',
+        'sidebar-collapsed': '56px',
+        'drawer': '384px',
+      },
       maxWidth: {
         content: '1400px',
       },

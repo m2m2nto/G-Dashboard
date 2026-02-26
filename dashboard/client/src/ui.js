@@ -27,3 +27,26 @@ export const BUTTON_PILL_BASE =
 
 export const BUTTON_ICON =
   'inline-flex items-center justify-center w-10 h-10 rounded-full bg-transparent text-on-surface-secondary hover:bg-surface-dim transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+
+// Sidebar navigation
+export const SIDEBAR_ITEM =
+  'relative flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium text-on-surface-secondary hover:bg-surface-dim transition-colors cursor-pointer';
+
+export const SIDEBAR_ITEM_ACTIVE =
+  'relative flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium bg-primary-light text-primary transition-colors cursor-pointer';
+
+export const SIDEBAR_ITEM_COLLAPSED =
+  'relative flex items-center justify-center w-full py-2 rounded-lg text-on-surface-secondary hover:bg-surface-dim transition-colors cursor-pointer';
+
+export const SIDEBAR_ITEM_COLLAPSED_ACTIVE =
+  'relative flex items-center justify-center w-full py-2 rounded-lg bg-primary-light text-primary transition-colors cursor-pointer';
+
+// Sub-tab bar
+export const SUB_TAB =
+  'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors';
+
+export const SUB_TAB_ACTIVE =
+  'bg-primary text-white shadow-elevation-1';
+
+export const SUB_TAB_INACTIVE =
+  'text-on-surface-secondary hover:bg-surface-dim';

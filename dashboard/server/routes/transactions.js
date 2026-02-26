@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { readTransactions, addTransaction, updateTransaction, deleteTransaction, syncCashFlow, compactTable } from '../services/excel.js';
 import { MONTHS, CATEGORY_TO_CF_ROW, listBankingYears } from '../config.js';
 import { appendEntry } from '../services/audit.js';
-import { readMap, getMappingsForMonth, setMapping, deleteMapping, shiftMappingsOnDelete, shiftMappingsOnCompact } from '../services/budgetCategoryMap.js';
+import { shiftMappingsOnCompact } from '../services/budgetCategoryMap.js';
+import { readCfBudgetMap } from '../services/cfBudgetCategoryMap.js';
 
 const router = Router();
 
@@ -133,19 +134,18 @@ router.post('/:year/:month/compact', async (req, res) => {
 router.get('/budget-summary/:year', async (req, res) => {
   const year = req.params.year;
   try {
-    const map = await readMap(year);
-    // Build budgetRow → month → amount from all mapped transactions
+    const cfBudgetMap = await readCfBudgetMap();
+    // Build budgetRow → month → amount using CF→Budget mapping
     const summary = {};
     for (const month of MONTHS) {
       const monthIdx = MONTHS.indexOf(month);
       const rows = await readTransactions(month, year).catch(() => []);
       for (const tx of rows) {
-        const key = `${month}-${tx.row}`;
-        const mapping = map[key];
-        if (!mapping) continue;
+        if (!tx.cashFlow) continue;
+        const mapping = cfBudgetMap[tx.cashFlow];
+        if (!mapping || !mapping.budgetRow) continue;
         const budgetRow = mapping.budgetRow;
         if (!summary[budgetRow]) summary[budgetRow] = new Array(12).fill(0);
-        // Use outflow for cost rows, inflow for revenue rows (matching budget sign convention)
         const amount = (tx.outflow || 0) + (tx.inflow || 0);
         summary[budgetRow][monthIdx] += amount;
       }
@@ -164,14 +164,6 @@ router.get('/:year/:month', async (req, res) => {
   }
   try {
     const rows = await readTransactions(month, year);
-    const budgetMap = await getMappingsForMonth(year, month).catch(() => ({}));
-    for (const tx of rows) {
-      const mapping = budgetMap[tx.row];
-      if (mapping) {
-        tx.budgetCategory = mapping.category;
-        tx.budgetRow = mapping.budgetRow;
-      }
-    }
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -189,9 +181,6 @@ router.post('/:year/:month', async (req, res) => {
   const month = MONTHS[parseInt(dateMonthNum, 10) - 1];
   try {
     const result = await addTransaction(month, cleaned, year);
-    if (req.body.budgetCategory && req.body.budgetRow != null) {
-      await setMapping(year, month, result.row, req.body.budgetCategory, Number(req.body.budgetRow)).catch(() => {});
-    }
     await syncCashFlow(month, year).catch((err) => console.error('Cash flow sync failed:', err.message));
     appendEntry({ action: 'transaction.add', year, month, details: cleaned }).catch(() => {});
     res.json({ ...result, year, month });
@@ -218,13 +207,6 @@ router.put('/:year/:month/:row', async (req, res) => {
     const rows = await readTransactions(month, year);
     const before = rows.find((r) => r.row === row);
     const result = await updateTransaction(month, row, cleaned, year);
-    if (req.body.budgetCategory !== undefined) {
-      if (req.body.budgetCategory && req.body.budgetRow != null) {
-        await setMapping(year, month, row, req.body.budgetCategory, Number(req.body.budgetRow)).catch(() => {});
-      } else {
-        await deleteMapping(year, month, row).catch(() => {});
-      }
-    }
     await syncCashFlow(month, year).catch((err) => console.error('Cash flow sync failed:', err.message));
     if (before) {
       const changes = {};
@@ -256,9 +238,7 @@ router.delete('/:year/:month/:row', async (req, res) => {
   try {
     const rows = await readTransactions(month, year);
     const before = rows.find((r) => r.row === row);
-    const lastDataRow = rows.length > 0 ? Math.max(...rows.map((r) => r.row)) : row;
     const result = await deleteTransaction(month, row, year);
-    await shiftMappingsOnDelete(year, month, row, lastDataRow).catch(() => {});
     await syncCashFlow(month, year).catch((err) => console.error('Cash flow sync failed:', err.message));
     if (before) {
       const { row: _, ...details } = before;

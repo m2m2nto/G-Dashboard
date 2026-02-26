@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import MonthSelector from './components/MonthSelector.jsx';
-import YearSelector from './components/YearSelector.jsx';
 import TransactionTable from './components/TransactionTable.jsx';
 import TransactionForm from './components/TransactionForm.jsx';
 import CashFlowGrid from './components/CashFlowGrid.jsx';
@@ -9,12 +8,16 @@ import BudgetEntries from './components/BudgetEntries.jsx';
 import BudgetCharts from './components/BudgetCharts.jsx';
 import CashFlowProjection from './components/CashFlowProjection.jsx';
 import ElementsTable from './components/ElementsTable.jsx';
+import CategoryMapping from './components/CategoryMapping.jsx';
 import ChartsView from './components/ChartsView.jsx';
-import ActivityLog from './components/ActivityLog.jsx';
-import UserSwitcher from './components/UserSwitcher.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
 import WelcomeSetup from './components/WelcomeSetup.jsx';
-import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE, BUTTON_ICON } from './ui.js';
+import AppLayout from './components/AppLayout.jsx';
+import ActivityDrawer from './components/ActivityDrawer.jsx';
+import ActivityLog from './components/ActivityLog.jsx';
+import DashboardHome from './components/DashboardHome.jsx';
+import SubTabBar from './components/SubTabBar.jsx';
+import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE } from './ui.js';
 import {
   getTransactions,
   getTransactionYears,
@@ -38,6 +41,8 @@ import {
   getElementsDetail,
   getCategoryHints,
   updateElementCategory,
+  getCfBudgetMap,
+  updateCfBudgetMapping,
   compactTransactions,
   getActivity,
   getYearlySummary,
@@ -50,10 +55,43 @@ import {
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
 
+const CF_SUB_TABS = [
+  { id: 'grid', label: 'Grid', icon: 'grid_view' },
+  { id: 'categories', label: 'Categories', icon: 'category' },
+  { id: 'mapping', label: 'Mapping', icon: 'link' },
+];
+
+const BUDGET_SUB_TABS = [
+  { id: 'overview', label: 'Overview', icon: 'table_chart' },
+  { id: 'projection', label: 'Projection', icon: 'payments' },
+  { id: 'entries', label: 'Entries', icon: 'edit_note' },
+];
+
+const ANALYTICS_SUB_TABS = [
+  { id: 'cashflow', label: 'Cash Flow', icon: 'monitoring' },
+  { id: 'budget', label: 'Budget', icon: 'account_balance' },
+];
+
 export default function App() {
-  const [tab, setTab] = useState('transactions');
-  const [txYear, setTxYear] = useState(String(new Date().getFullYear()));
+  // ── Navigation state ──
+  const [section, setSection] = useState('home');
+  const [cashflowView, setCashflowView] = useState('grid');
+  const [budgetView, setBudgetView] = useState('overview');
+  const [entriesInitialMonth, setEntriesInitialMonth] = useState(undefined);
+  const [entriesInitialCategory, setEntriesInitialCategory] = useState(undefined);
+  const [analyticsView, setAnalyticsView] = useState('cashflow');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('g-dash-sidebar-collapsed') === 'true';
+  });
+  const [activityDrawerOpen, setActivityDrawerOpen] = useState(false);
+
+  // ── Global year ──
+  const [globalYear, setGlobalYear] = useState(String(new Date().getFullYear()));
   const [txYears, setTxYears] = useState([]);
+  const [cfYears, setCfYears] = useState([]);
+  const [budgetYears, setBudgetYears] = useState([]);
+
+  // ── Transactions ──
   const [month, setMonth] = useState(MONTHS[new Date().getMonth()]);
   const [transactions, setTransactions] = useState([]);
   const [txLoading, setTxLoading] = useState(false);
@@ -61,39 +99,71 @@ export default function App() {
   const [categories, setCategories] = useState([]);
   const [elements, setElements] = useState([]);
   const [categoryHints, setCategoryHints] = useState({});
+  const [budgetCategoriesList, setBudgetCategoriesList] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [txQuery, setTxQuery] = useState('');
+  const [txFilters, setTxFilters] = useState([]);
+
+  // ── Cash Flow ──
   const [cashFlow, setCashFlow] = useState(null);
-  const [cfYear, setCfYear] = useState(String(new Date().getFullYear()));
-  const [cfYears, setCfYears] = useState([]);
   const [cfLoading, setCfLoading] = useState(false);
+  const [showYoY, setShowYoY] = useState(true);
+
+  // ── CF → Budget mapping ──
+  const [cfBudgetMap, setCfBudgetMap] = useState({});
+  const [cfBudgetMapLoading, setCfBudgetMapLoading] = useState(false);
+
+  // ── Elements (CF sub-view) ──
+  const [elementsDetail, setElementsDetail] = useState([]);
+  const [elementsLoading, setElementsLoading] = useState(false);
+  const [elementsQuery, setElementsQuery] = useState('');
+  const [elementsFilters, setElementsFilters] = useState([]);
+
+  // ── Budget ──
   const [budget, setBudget] = useState(null);
-  const [budgetYear, setBudgetYear] = useState('2026');
-  const [budgetYears, setBudgetYears] = useState([]);
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetEntries, setBudgetEntries] = useState([]);
   const [budgetEntriesLoading, setBudgetEntriesLoading] = useState(false);
   const [txBudgetSummary, setTxBudgetSummary] = useState(null);
   const [seededScenarios, setSeededScenarios] = useState({ certo: false, possibile: false, ottimistico: false });
-  const [budgetCategoriesList, setBudgetCategoriesList] = useState([]);
-  const [elementsDetail, setElementsDetail] = useState([]);
-  const [elementsLoading, setElementsLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [toasts, setToasts] = useState([]);
-  const [txQuery, setTxQuery] = useState('');
-  const [elementsQuery, setElementsQuery] = useState('');
-  const [txFilters, setTxFilters] = useState([]);
-  const [elementsFilters, setElementsFilters] = useState([]);
-  const [cfSubTab, setCfSubTab] = useState('cashflow');
-  const [showYoY, setShowYoY] = useState(true);
+
+  // ── Charts ──
   const [chartsYearly, setChartsYearly] = useState(null);
   const [chartsYoYQoQ, setChartsYoYQoQ] = useState(null);
   const [chartsLoading, setChartsLoading] = useState(false);
+
+  // ── Activity ──
   const [activityLog, setActivityLog] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [activityQuery, setActivityQuery] = useState('');
+  const [activityFilters, setActivityFilters] = useState([]);
+
+  // ── UI ──
+  const [toasts, setToasts] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState(null); // null = loading, true/false
+  const [needsSetup, setNeedsSetup] = useState(null);
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
 
+  // ── Computed: merged years list ──
+  const allYears = useMemo(() => {
+    const set = new Set([...txYears, ...cfYears, ...budgetYears]);
+    return [...set].sort((a, b) => b - a).map(String);
+  }, [txYears, cfYears, budgetYears]);
+
+  // ── Activity badge count ──
+  const activityBadgeCount = useMemo(() => {
+    const lastViewed = parseInt(localStorage.getItem('g-dash-activity-viewed') || '0', 10);
+    if (!lastViewed || !activityLog.length) return activityLog.length;
+    return activityLog.filter((e) => new Date(e.ts).getTime() > lastViewed).length;
+  }, [activityLog]);
+
+  // ── Sidebar collapse persistence ──
+  useEffect(() => {
+    localStorage.setItem('g-dash-sidebar-collapsed', sidebarCollapsed.toString());
+  }, [sidebarCollapsed]);
+
+  // ── Toast system ──
   const pushToast = useCallback((type, text) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setToasts((prev) => [...prev, { id, type, text }]);
@@ -102,7 +172,7 @@ export default function App() {
     }, 4000);
   }, []);
 
-  // Check on mount whether a project is open and data files exist
+  // ── Setup check ──
   useEffect(() => {
     getSettings()
       .then((s) => {
@@ -134,127 +204,92 @@ export default function App() {
     getCashFlowYears().then(setCfYears).catch((e) => pushToast('error', 'Failed to load years: ' + e.message));
     getBudgetYears().then(setBudgetYears).catch(() => {});
     getTransactionYears().then(setTxYears).catch((e) => pushToast('error', 'Failed to load transaction years: ' + e.message));
-    getBudgetCategories(txYear).then(setBudgetCategoriesList).catch(() => {});
+    getBudgetCategories(globalYear).then(setBudgetCategoriesList).catch(() => {});
     loadUsers();
-  }, [pushToast, loadUsers]);
+    // Load activity for badge count
+    getActivity().then(setActivityLog).catch(() => {});
+  }, [pushToast, loadUsers, globalYear]);
 
   useEffect(() => {
     if (needsSetup === false) initApp();
   }, [needsSetup, initApp]);
 
+  // ── Data loaders ──
   const loadTransactions = useCallback(async () => {
     setTxLoading(true);
     try {
-      const data = await getTransactions(txYear, month);
+      const data = await getTransactions(globalYear, month);
       setTransactions(data);
     } catch (err) {
       pushToast('error', 'Failed to load transactions: ' + err.message);
     }
     setTxLoading(false);
-  }, [txYear, month]);
+  }, [globalYear, month, pushToast]);
 
   useEffect(() => {
-    if (tab === 'transactions') loadTransactions();
-  }, [txYear, month, tab, loadTransactions]);
+    if (section === 'transactions') loadTransactions();
+  }, [globalYear, month, section, loadTransactions]);
 
   useEffect(() => {
     if (needsSetup === false) {
-      getBudgetCategories(txYear).then(setBudgetCategoriesList).catch(() => {});
+      getBudgetCategories(globalYear).then(setBudgetCategoriesList).catch(() => {});
     }
-  }, [txYear, needsSetup]);
+  }, [globalYear, needsSetup]);
 
   const loadCashFlow = useCallback(async () => {
     setCfLoading(true);
     try {
-      await syncAll(cfYear, { silent: true });
-      const data = await getCashFlow(cfYear);
+      await syncAll(globalYear, { silent: true });
+      const data = await getCashFlow(globalYear);
       setCashFlow(data);
     } catch (err) {
       pushToast('error', 'Failed to load cash flow: ' + err.message);
     }
     setCfLoading(false);
-  }, [cfYear]);
+  }, [globalYear, pushToast]);
 
   useEffect(() => {
-    if (tab === 'cashflow') loadCashFlow();
-  }, [tab, cfYear, loadCashFlow]);
+    if (section === 'cashflow') loadCashFlow();
+  }, [section, globalYear, loadCashFlow]);
 
   const loadBudget = useCallback(async () => {
     setBudgetLoading(true);
     try {
-      const data = await getBudget(budgetYear);
+      const data = await getBudget(globalYear);
       setBudget(data);
     } catch (err) {
       pushToast('error', 'Failed to load budget: ' + err.message);
     }
     setBudgetLoading(false);
-  }, [budgetYear]);
+  }, [globalYear, pushToast]);
 
   useEffect(() => {
-    if (tab === 'budget' || tab === 'budget-charts' || tab === 'cf-projection' || tab === 'budget-entries') loadBudget();
-  }, [tab, budgetYear, loadBudget]);
+    if (section === 'budget' || (section === 'analytics' && analyticsView === 'budget')) loadBudget();
+  }, [section, analyticsView, globalYear, loadBudget]);
 
   const loadBudgetEntries = useCallback(async () => {
     setBudgetEntriesLoading(true);
     try {
-      const data = await getBudgetEntries(budgetYear);
+      const data = await getBudgetEntries(globalYear);
       setBudgetEntries(data.entries || []);
       if (data.seeded) setSeededScenarios(data.seeded);
     } catch (err) {
       pushToast('error', 'Failed to load budget entries: ' + err.message);
     }
     setBudgetEntriesLoading(false);
-  }, [budgetYear]);
+  }, [globalYear, pushToast]);
 
   useEffect(() => {
-    if (tab === 'budget' || tab === 'cf-projection' || tab === 'budget-entries') loadBudgetEntries();
-  }, [tab, budgetYear, loadBudgetEntries]);
+    if (section === 'budget' && (budgetView === 'overview' || budgetView === 'projection' || budgetView === 'entries')) {
+      loadBudgetEntries();
+    }
+  }, [section, budgetView, globalYear, loadBudgetEntries]);
 
   useEffect(() => {
-    if (tab === 'cf-projection') {
-      getTransactionBudgetSummary(budgetYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null));
+    if (section === 'budget' && budgetView === 'projection') {
+      getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null));
     }
-  }, [tab, budgetYear]);
-
-  const handleAddBudgetEntry = async (data) => {
-    try {
-      await addBudgetEntry(budgetYear, data);
-      await Promise.all([loadBudgetEntries(), loadBudget()]);
-    } catch (err) {
-      pushToast('error', err.message || 'Failed to add entry');
-      throw err;
-    }
-  };
-
-  const handleUpdateBudgetEntry = async (id, data) => {
-    try {
-      await updateBudgetEntry(budgetYear, id, data);
-      await Promise.all([loadBudgetEntries(), loadBudget()]);
-    } catch (err) {
-      pushToast('error', err.message || 'Failed to update entry');
-      throw err;
-    }
-  };
-
-  const handleDeleteBudgetEntry = async (id) => {
-    try {
-      await deleteBudgetEntry(budgetYear, id);
-      await Promise.all([loadBudgetEntries(), loadBudget()]);
-    } catch (err) {
-      pushToast('error', err.message || 'Failed to delete entry');
-    }
-  };
-
-  const handleSeedBudgetEntries = async (scenario) => {
-    try {
-      const result = await seedBudgetEntries(budgetYear, scenario);
-      pushToast('success', `Imported ${result.count} ${scenario} entries from Excel`);
-      await Promise.all([loadBudgetEntries(), loadBudget()]);
-    } catch (err) {
-      pushToast('error', err.message || 'Failed to seed entries');
-      throw err;
-    }
-  };
+  }, [section, budgetView, globalYear]);
 
   const loadElements = useCallback(async () => {
     setElementsLoading(true);
@@ -265,11 +300,30 @@ export default function App() {
       pushToast('error', 'Failed to load elements: ' + err.message);
     }
     setElementsLoading(false);
-  }, []);
+  }, [pushToast]);
 
   useEffect(() => {
-    if (tab === 'cashflow' && cfSubTab === 'elements') loadElements();
-  }, [tab, cfSubTab, loadElements]);
+    if (section === 'cashflow' && cashflowView === 'categories') loadElements();
+  }, [section, cashflowView, loadElements]);
+
+  const loadCfBudgetMap = useCallback(async () => {
+    setCfBudgetMapLoading(true);
+    try {
+      const [map, budgetCats] = await Promise.all([
+        getCfBudgetMap(),
+        getBudgetCategories(globalYear),
+      ]);
+      setCfBudgetMap(map);
+      setBudgetCategoriesList(budgetCats);
+    } catch (err) {
+      pushToast('error', 'Failed to load mapping: ' + err.message);
+    }
+    setCfBudgetMapLoading(false);
+  }, [globalYear, pushToast]);
+
+  useEffect(() => {
+    if (section === 'cashflow' && cashflowView === 'mapping') loadCfBudgetMap();
+  }, [section, cashflowView, loadCfBudgetMap]);
 
   const loadCharts = useCallback(async () => {
     setChartsLoading(true);
@@ -281,11 +335,11 @@ export default function App() {
       pushToast('error', 'Failed to load charts: ' + err.message);
     }
     setChartsLoading(false);
-  }, []);
+  }, [pushToast]);
 
   useEffect(() => {
-    if (tab === 'charts') loadCharts();
-  }, [tab, loadCharts]);
+    if (section === 'analytics') loadCharts();
+  }, [section, loadCharts]);
 
   const loadActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -296,33 +350,56 @@ export default function App() {
       pushToast('error', 'Failed to load activity: ' + err.message);
     }
     setActivityLoading(false);
-  }, []);
+  }, [pushToast]);
 
   useEffect(() => {
-    if (tab === 'activity') loadActivity();
-  }, [tab, loadActivity]);
+    if (section === 'activity') loadActivity();
+  }, [section, loadActivity]);
 
-  const handleSettingsSaved = () => {
-    pushToast('success', 'Settings updated');
-    setShowSettings(false);
-    // Reload all data
-    getCategories().then(setCategories).catch(() => {});
-    getElements().then(setElements).catch(() => {});
-    getCategoryHints().then(setCategoryHints).catch(() => {});
-    getCashFlowYears().then(setCfYears).catch(() => {});
-    getBudgetYears().then(setBudgetYears).catch(() => {});
-    getTransactionYears().then(setTxYears).catch(() => {});
-    getBudgetCategories(txYear).then(setBudgetCategoriesList).catch(() => {});
-    if (tab === 'transactions') loadTransactions();
-    if (tab === 'cashflow') loadCashFlow();
-    if (tab === 'budget' || tab === 'budget-charts' || tab === 'cf-projection' || tab === 'budget-entries') { loadBudget(); loadBudgetEntries(); }
-    if (tab === 'cashflow' && cfSubTab === 'elements') loadElements();
-    if (tab === 'charts') loadCharts();
-    if (tab === 'activity') loadActivity();
+  // ── Budget entry handlers ──
+  const handleAddBudgetEntry = async (data) => {
+    try {
+      await addBudgetEntry(globalYear, data);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to add entry');
+      throw err;
+    }
   };
 
+  const handleUpdateBudgetEntry = async (id, data) => {
+    try {
+      await updateBudgetEntry(globalYear, id, data);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to update entry');
+      throw err;
+    }
+  };
+
+  const handleDeleteBudgetEntry = async (id) => {
+    try {
+      await deleteBudgetEntry(globalYear, id);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to delete entry');
+    }
+  };
+
+  const handleSeedBudgetEntries = async (scenario) => {
+    try {
+      const result = await seedBudgetEntries(globalYear, scenario);
+      pushToast('success', `Imported ${result.count} ${scenario} entries from Excel`);
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to seed entries');
+      throw err;
+    }
+  };
+
+  // ── Transaction handlers ──
   const handleUpdateTransaction = async (row, data) => {
-    await updateTransaction(txYear, month, row, data);
+    await updateTransaction(globalYear, month, row, data);
     if (data.cashFlow && data.transaction) {
       await updateElementCategory(data.transaction, data.cashFlow);
       getCategoryHints().then(setCategoryHints).catch(() => {});
@@ -331,16 +408,15 @@ export default function App() {
   };
 
   const handleDeleteTransaction = async (row) => {
-    await deleteTransaction(txYear, month, row);
+    await deleteTransaction(globalYear, month, row);
     await loadTransactions();
   };
 
   const handleAddTransaction = async (formData) => {
     setSubmitting(true);
     try {
-      const result = await addTransaction(txYear, month, formData);
-      // Navigate to the year/month where the transaction was actually stored (derived from date)
-      if (result.year && result.year !== txYear) setTxYear(result.year);
+      const result = await addTransaction(globalYear, month, formData);
+      if (result.year && result.year !== globalYear) setGlobalYear(result.year);
       if (result.month && result.month !== month) setMonth(result.month);
       await loadTransactions();
       setSubmitting(false);
@@ -358,13 +434,73 @@ export default function App() {
     getCategoryHints().then(setCategoryHints).catch(() => {});
   };
 
-  const tabs = [
-    { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
-    { id: 'cashflow', label: 'Cash Flow', icon: 'monitoring' },
-    { id: 'charts', label: 'Charts', icon: 'bar_chart' },
-    { id: 'activity', label: 'Activity', icon: 'history' },
-  ];
+  const handleUpdateCfBudgetMapping = async (cfCategory, budgetCategory, budgetRow) => {
+    const result = await updateCfBudgetMapping(cfCategory, budgetCategory, budgetRow);
+    setCfBudgetMap(result);
+  };
 
+  const handleSettingsSaved = () => {
+    pushToast('success', 'Settings updated');
+    setShowSettings(false);
+    getCategories().then(setCategories).catch(() => {});
+    getElements().then(setElements).catch(() => {});
+    getCategoryHints().then(setCategoryHints).catch(() => {});
+    getCashFlowYears().then(setCfYears).catch(() => {});
+    getBudgetYears().then(setBudgetYears).catch(() => {});
+    getTransactionYears().then(setTxYears).catch(() => {});
+    getBudgetCategories(globalYear).then(setBudgetCategoriesList).catch(() => {});
+    if (section === 'transactions') loadTransactions();
+    if (section === 'cashflow') { loadCashFlow(); if (cashflowView === 'categories') loadElements(); }
+    if (section === 'budget') { loadBudget(); loadBudgetEntries(); }
+    if (section === 'analytics') { loadCharts(); if (analyticsView === 'budget') loadBudget(); }
+    if (section === 'activity') loadActivity();
+  };
+
+  // ── Navigation handlers ──
+  const handleNavigate = (target) => {
+    if (target === 'settings') {
+      setShowSettings(true);
+      return;
+    }
+    setSection(target);
+  };
+
+  const handleNavigateSection = (sec) => {
+    setSection(sec);
+    // Reset sub-views to defaults
+    if (sec === 'cashflow') setCashflowView('grid');
+    if (sec === 'budget') { setBudgetView('overview'); setEntriesInitialMonth(undefined); setEntriesInitialCategory(undefined); }
+    if (sec === 'analytics') setAnalyticsView('cashflow');
+  };
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const handler = (e) => {
+      // Cmd+1-5 for section navigation
+      if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '6') {
+        e.preventDefault();
+        const sections = ['home', 'transactions', 'cashflow', 'budget', 'analytics', 'activity'];
+        const idx = parseInt(e.key) - 1;
+        if (sections[idx]) setSection(sections[idx]);
+      }
+      // Cmd+N for new transaction
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault();
+        setSection('transactions');
+        setShowForm(true);
+      }
+      // Escape closes drawers/modals
+      if (e.key === 'Escape') {
+        if (showSettings) { setShowSettings(false); return; }
+        if (activityDrawerOpen) { setActivityDrawerOpen(false); return; }
+        if (showForm) { setShowForm(false); return; }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showSettings, activityDrawerOpen, showForm]);
+
+  // ── Filter logic ──
   const normalize = (value) => String(value || '').toLowerCase();
   const txSearch = txQuery.trim().toLowerCase();
   const txFilterDefs = [
@@ -381,14 +517,7 @@ export default function App() {
 
   const filteredTransactions = txSearch
     ? transactions.filter((tx) => {
-        const haystack = [
-          tx.transaction,
-          tx.notes,
-          tx.cashFlow,
-          tx.iban,
-          tx.type,
-          tx.date,
-        ]
+        const haystack = [tx.transaction, tx.notes, tx.cashFlow, tx.iban, tx.type, tx.date]
           .map(normalize)
           .join(' ');
         return haystack.includes(txSearch);
@@ -422,7 +551,40 @@ export default function App() {
     ? filteredElements.filter((el) => activeElementsPredicates.every((p) => p(el)))
     : filteredElements;
 
-  // Loading state — waiting for setup check
+  // ── Activity filter logic ──
+  const activitySearch = activityQuery.trim().toLowerCase();
+  const activityFilterDefs = [
+    { id: 'transactions', label: 'Transactions', predicate: (e) => e.action?.startsWith('transaction.') },
+    { id: 'cashflow', label: 'Cash Flow', predicate: (e) => e.action?.startsWith('cashflow.') },
+    { id: 'budget', label: 'Budget', predicate: (e) => e.action?.startsWith('budget.') },
+    { id: 'elements', label: 'Elements', predicate: (e) => e.action?.startsWith('element.') },
+  ];
+
+  const activeActivityPredicates = activityFilterDefs
+    .filter((f) => activityFilters.includes(f.id))
+    .map((f) => f.predicate);
+
+  const searchedActivity = activitySearch
+    ? activityLog.filter((e) => {
+        const haystack = [
+          e.action,
+          e.details?.transaction,
+          e.details?.description,
+          e.details?.element,
+          e.details?.category,
+          e.details?.scenario,
+          e.month,
+          e.user,
+        ].map((v) => String(v || '').toLowerCase()).join(' ');
+        return haystack.includes(activitySearch);
+      })
+    : activityLog;
+
+  const finalActivity = activeActivityPredicates.length
+    ? searchedActivity.filter((e) => activeActivityPredicates.some((p) => p(e)))
+    : searchedActivity;
+
+  // ── Loading state — waiting for setup check ──
   if (needsSetup === null) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -434,20 +596,19 @@ export default function App() {
     );
   }
 
-  // First-launch setup
+  // ── First-launch setup ──
   if (needsSetup) {
-    return (
-      <WelcomeSetup
-        onComplete={() => setNeedsSetup(false)}
-      />
-    );
+    return <WelcomeSetup onComplete={() => setNeedsSetup(false)} />;
   }
 
+  // ── Determine current sub-view for breadcrumb ──
+  const currentSubView = section === 'cashflow' ? cashflowView : section === 'budget' ? budgetView : section === 'analytics' ? analyticsView : null;
+
   return (
-    <div className="min-h-screen bg-white">
+    <>
       {/* Snackbar toasts — bottom-left, Material style */}
       {toasts.length > 0 && (
-        <div className="fixed left-6 bottom-6 z-50 flex flex-col gap-2">
+        <div className="fixed left-6 bottom-6 z-[60] flex flex-col gap-2">
           {toasts.map((t) => (
             <div
               key={t.id}
@@ -473,109 +634,57 @@ export default function App() {
         </div>
       )}
 
-      {/* Nav bar */}
-      <nav className="bg-white shadow-elevation-1 sticky top-0 z-10">
-        <div className="max-w-content mx-auto px-6 flex items-center h-16">
-          <span className="text-base font-semibold text-on-surface mr-8 tracking-tight">G-Dashboard</span>
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
-                tab === t.id ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
-              }`}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{t.icon}</span>
-              {t.label}
-              {tab === t.id && (
-                <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
-              )}
-            </button>
-          ))}
-          <span className="w-px h-6 bg-surface-border mx-1"></span>
-          <button
-            onClick={() => setTab('budget')}
-            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
-              tab === 'budget' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
-            }`}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>account_balance</span>
-            Budget
-            {tab === 'budget' && (
-              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab('budget-charts')}
-            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
-              tab === 'budget-charts' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
-            }`}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>bar_chart</span>
-            Budget Charts
-            {tab === 'budget-charts' && (
-              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab('cf-projection')}
-            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
-              tab === 'cf-projection' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
-            }`}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>payments</span>
-            CF Projection
-            {tab === 'cf-projection' && (
-              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab('budget-entries')}
-            className={`relative flex items-center gap-1.5 px-4 h-16 text-sm font-medium transition-colors ${
-              tab === 'budget-entries' ? 'text-primary' : 'text-on-surface-secondary hover:text-on-surface'
-            }`}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>edit_note</span>
-            Entries
-            {tab === 'budget-entries' && (
-              <span className="absolute left-2 right-2 bottom-0 h-[3px] rounded-full bg-primary"></span>
-            )}
-          </button>
-          <div className="ml-auto flex items-center gap-1">
-            <UserSwitcher
-              users={users}
-              currentUser={currentUser}
-              onSwitch={async (name) => {
-                await apiSetActiveUser(name);
-                setCurrentUser(name);
-              }}
-              onAdd={async (name) => {
-                const { users: u, activeUser } = await apiAddUser(name);
-                setUsers(u);
-                setCurrentUser(activeUser);
-              }}
-            />
-            <button
-              onClick={() => setShowSettings(true)}
-              className={BUTTON_ICON}
-              title="Settings"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>settings</span>
-            </button>
-          </div>
-        </div>
-      </nav>
+      <AppLayout
+        section={section}
+        subView={currentSubView}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+        onNavigate={handleNavigate}
+        onNavigateSection={handleNavigateSection}
+        allYears={allYears}
+        globalYear={globalYear}
+        onYearChange={setGlobalYear}
+        activityCount={activityBadgeCount}
+        onToggleActivity={() => {
+          setActivityDrawerOpen((v) => !v);
+          if (!activityDrawerOpen) loadActivity();
+        }}
+        users={users}
+        currentUser={currentUser}
+        onSwitchUser={async (name) => {
+          await apiSetActiveUser(name);
+          setCurrentUser(name);
+        }}
+        onAddUser={async (name) => {
+          const { users: u, activeUser } = await apiAddUser(name);
+          setUsers(u);
+          setCurrentUser(activeUser);
+        }}
+      >
 
-      {/* Content */}
-      <main className="max-w-content mx-auto px-6 py-5 overflow-x-hidden">
+        {/* ═══ HOME ═══ */}
+        {section === 'home' && (
+          <DashboardHome
+            year={globalYear}
+            onNavigate={handleNavigate}
+            onOpenNewTransaction={() => { setSection('transactions'); setShowForm(true); }}
+            onSyncCashFlow={async () => {
+              try {
+                await syncAll(globalYear);
+                pushToast('success', 'Cash flow synced');
+              } catch (err) {
+                pushToast('error', 'Sync failed: ' + err.message);
+              }
+            }}
+          />
+        )}
 
-        {/* Transactions tab */}
-        {tab === 'transactions' && (
+        {/* ═══ TRANSACTIONS ═══ */}
+        {section === 'transactions' && (
           <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
             {/* Toolbar */}
             <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
               <div className="flex items-center gap-3 flex-wrap">
-                <YearSelector years={txYears} selected={txYear} onChange={setTxYear} />
                 <MonthSelector selected={month} onChange={setMonth} />
                 <span className="text-sm text-on-surface-secondary">
                   {!txLoading && (
@@ -600,7 +709,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={async () => {
-                    await compactTransactions(txYear, month).catch(() => {});
+                    await compactTransactions(globalYear, month).catch(() => {});
                     loadTransactions();
                   }}
                   className={BUTTON_GHOST}
@@ -643,10 +752,7 @@ export default function App() {
               })}
               {(txFilters.length > 0 || txQuery) && (
                 <button
-                  onClick={() => {
-                    setTxFilters([]);
-                    setTxQuery('');
-                  }}
+                  onClick={() => { setTxFilters([]); setTxQuery(''); }}
                   className={BUTTON_GHOST}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
@@ -661,7 +767,6 @@ export default function App() {
                   categories={categories}
                   elements={elements}
                   categoryHints={categoryHints}
-                  budgetCategories={budgetCategoriesList}
                   onSubmit={async (data) => {
                     const ok = await handleAddTransaction(data);
                     if (ok) setShowForm(false);
@@ -677,7 +782,6 @@ export default function App() {
               categories={categories}
               elements={elements}
               categoryHints={categoryHints}
-              budgetCategories={budgetCategoriesList}
               onUpdate={handleUpdateTransaction}
               onDelete={handleDeleteTransaction}
               onToast={pushToast}
@@ -685,14 +789,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Cash Flow tab (with Elements sub-tab) */}
-        {tab === 'cashflow' && (
+        {/* ═══ CASH FLOW ═══ */}
+        {section === 'cashflow' && (
           <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
             {/* Toolbar */}
             <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
               <div className="flex items-center gap-3 flex-wrap">
-                <YearSelector years={cfYears} selected={cfYear} onChange={setCfYear} />
-                {cfSubTab === 'cashflow' && cfLoading && (
+                <SubTabBar tabs={CF_SUB_TABS} active={cashflowView} onChange={setCashflowView} />
+                {cashflowView === 'grid' && cfLoading && (
                   <span className="text-sm text-on-surface-secondary flex items-center gap-2">
                     <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -701,7 +805,7 @@ export default function App() {
                     Syncing...
                   </span>
                 )}
-                {cfSubTab === 'elements' && !elementsLoading && (
+                {cashflowView === 'categories' && !elementsLoading && (
                   <span className="text-sm text-on-surface-secondary">
                     {elementsSearch
                       ? `Showing ${finalElements.length} of ${elementsDetail.length}`
@@ -710,7 +814,7 @@ export default function App() {
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {cfSubTab === 'cashflow' && cashFlow?.hasYoY && (
+                {cashflowView === 'grid' && cashFlow?.hasYoY && (
                   <button
                     onClick={() => setShowYoY((v) => !v)}
                     className={`${BUTTON_PILL_BASE} shrink-0 ${
@@ -723,7 +827,7 @@ export default function App() {
                     {showYoY ? 'YoY Comparison' : 'Show YoY'}
                   </button>
                 )}
-                {cfSubTab === 'elements' && (
+                {cashflowView === 'categories' && (
                   <div className="relative w-56">
                     <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
                     <input
@@ -735,20 +839,9 @@ export default function App() {
                     />
                   </div>
                 )}
-                <button
-                  onClick={() => setCfSubTab(cfSubTab === 'elements' ? 'cashflow' : 'elements')}
-                  className={`${BUTTON_PILL_BASE} shrink-0 ${
-                    cfSubTab === 'elements'
-                      ? 'bg-primary-light text-primary border-primary/30'
-                      : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-                  }`}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>category</span>
-                  Categories
-                </button>
               </div>
             </div>
-            {cfSubTab === 'elements' && (
+            {cashflowView === 'categories' && (
               <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
                 {elementsFilterDefs.map((filter) => {
                   const isActive = elementsFilters.includes(filter.id);
@@ -773,10 +866,7 @@ export default function App() {
                 })}
                 {(elementsFilters.length > 0 || elementsQuery) && (
                   <button
-                    onClick={() => {
-                      setElementsFilters([]);
-                      setElementsQuery('');
-                    }}
+                    onClick={() => { setElementsFilters([]); setElementsQuery(''); }}
                     className={BUTTON_GHOST}
                   >
                     <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
@@ -785,10 +875,10 @@ export default function App() {
                 )}
               </div>
             )}
-            {cfSubTab === 'cashflow' && (
-              <CashFlowGrid data={cashFlow} showYoY={showYoY} year={cfYear} />
+            {cashflowView === 'grid' && (
+              <CashFlowGrid data={cashFlow} showYoY={showYoY} year={globalYear} />
             )}
-            {cfSubTab === 'elements' && (
+            {cashflowView === 'categories' && (
               <ElementsTable
                 elements={finalElements}
                 loading={elementsLoading}
@@ -797,15 +887,26 @@ export default function App() {
                 onToast={pushToast}
               />
             )}
+            {cashflowView === 'mapping' && (
+              <CategoryMapping
+                categories={categories}
+                budgetCategories={budgetCategoriesList}
+                cfBudgetMap={cfBudgetMap}
+                loading={cfBudgetMapLoading}
+                onUpdate={handleUpdateCfBudgetMapping}
+                onToast={pushToast}
+              />
+            )}
           </div>
         )}
 
-        {/* Budget tab */}
-        {tab === 'budget' && (
-          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-3">
-              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
-              {budgetLoading && (
+        {/* ═══ BUDGET ═══ */}
+        {section === 'budget' && (
+          <div className="space-y-4">
+            {/* Sub-tab bar */}
+            <div className="flex items-center gap-3">
+              <SubTabBar tabs={BUDGET_SUB_TABS} active={budgetView} onChange={setBudgetView} />
+              {(budgetLoading || budgetEntriesLoading) && (
                 <span className="text-sm text-on-surface-secondary flex items-center gap-2">
                   <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -815,108 +916,163 @@ export default function App() {
                 </span>
               )}
             </div>
-            <BudgetGrid
-              data={budget}
-              year={budgetYear}
-            />
+
+            {budgetView === 'overview' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                <BudgetGrid
+                  data={budget}
+                  year={globalYear}
+                  onConsuntivoClick={(month, category) => {
+                    setEntriesInitialMonth(month || undefined);
+                    setEntriesInitialCategory(category || undefined);
+                    setBudgetView('entries');
+                  }}
+                />
+              </div>
+            )}
+
+            {budgetView === 'charts' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                <BudgetCharts data={budget} />
+              </div>
+            )}
+
+            {budgetView === 'projection' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                <CashFlowProjection entries={budgetEntries} budget={budget} txConsuntivo={txBudgetSummary} />
+              </div>
+            )}
+
+            {budgetView === 'entries' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                <BudgetEntries
+                  entries={budgetEntries || []}
+                  year={globalYear}
+                  budgetCategories={budget ? [
+                    ...budget.costs.map((c) => ({ category: c.category, row: c.row, type: 'cost' })),
+                    ...budget.revenues.map((c) => ({ category: c.category, row: c.row, type: 'revenue' })),
+                  ] : []}
+                  onAdd={handleAddBudgetEntry}
+                  onUpdate={handleUpdateBudgetEntry}
+                  onDelete={handleDeleteBudgetEntry}
+                  onSeed={handleSeedBudgetEntries}
+                  loading={budgetEntriesLoading}
+                  seededScenarios={seededScenarios}
+                  initialMonth={entriesInitialMonth}
+                  initialCategory={entriesInitialCategory}
+                  initialScenario="consuntivo"
+                />
+              </div>
+            )}
           </div>
         )}
 
-        {/* Budget Charts tab */}
-        {tab === 'budget-charts' && (
+        {/* ═══ ANALYTICS ═══ */}
+        {section === 'analytics' && (
+          <div className="space-y-4">
+            <SubTabBar tabs={ANALYTICS_SUB_TABS} active={analyticsView} onChange={setAnalyticsView} />
+
+            {analyticsView === 'cashflow' && (
+              <ChartsView yearly={chartsYearly} yoyQoQ={chartsYoYQoQ} loading={chartsLoading} />
+            )}
+
+            {analyticsView === 'budget' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                {budgetLoading ? (
+                  <div className="p-6 space-y-6 animate-pulse">
+                    <div className="h-5 w-48 bg-surface-dim rounded mb-6" />
+                    <div className="h-[320px] bg-surface-container rounded-xl" />
+                  </div>
+                ) : (
+                  <BudgetCharts data={budget} />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ ACTIVITY ═══ */}
+        {section === 'activity' && (
           <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-3">
-              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
-              {budgetLoading && (
-                <span className="text-sm text-on-surface-secondary flex items-center gap-2">
-                  <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Loading...
+            {/* Toolbar */}
+            <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-sm text-on-surface-secondary">
+                  {!activityLoading && (
+                    <>
+                      {activitySearch || activityFilters.length
+                        ? `Showing ${finalActivity.length} of ${activityLog.length}`
+                        : `${activityLog.length} entries`}
+                    </>
+                  )}
                 </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto sm:justify-end">
+                <div className="relative w-full sm:w-56 min-w-[140px]">
+                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
+                  <input
+                    type="search"
+                    value={activityQuery}
+                    onChange={(e) => setActivityQuery(e.target.value)}
+                    placeholder="Search activity..."
+                    className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <button onClick={loadActivity} className={BUTTON_GHOST} title="Refresh">
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
+                  Refresh
+                </button>
+              </div>
+            </div>
+            {/* Filter chips */}
+            <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
+              {activityFilterDefs.map((filter) => {
+                const isActive = activityFilters.includes(filter.id);
+                return (
+                  <button
+                    key={filter.id}
+                    onClick={() =>
+                      setActivityFilters((prev) =>
+                        isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
+                      )
+                    }
+                    className={`${BUTTON_PILL_BASE} ${
+                      isActive
+                        ? 'bg-primary-light text-primary border-primary/30'
+                        : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+                    }`}
+                  >
+                    {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
+                    {filter.label}
+                  </button>
+                );
+              })}
+              {(activityFilters.length > 0 || activityQuery) && (
+                <button
+                  onClick={() => { setActivityFilters([]); setActivityQuery(''); }}
+                  className={BUTTON_GHOST}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+                  Clear
+                </button>
               )}
             </div>
-            <BudgetCharts data={budget} />
+            <ActivityLog entries={finalActivity} loading={activityLoading} />
           </div>
         )}
 
-        {/* CF Projection tab */}
-        {tab === 'cf-projection' && (
-          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-3">
-              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
-              {budgetEntriesLoading && (
-                <span className="text-sm text-on-surface-secondary flex items-center gap-2">
-                  <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Loading...
-                </span>
-              )}
-            </div>
-            <CashFlowProjection entries={budgetEntries} budget={budget} txConsuntivo={txBudgetSummary} />
-          </div>
-        )}
+      </AppLayout>
 
-        {/* Budget Entries tab */}
-        {tab === 'budget-entries' && (
-          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            <div className="px-4 py-3 flex items-center gap-3">
-              <YearSelector years={budgetYears} selected={budgetYear} onChange={setBudgetYear} />
-              {budgetEntriesLoading && (
-                <span className="text-sm text-on-surface-secondary flex items-center gap-2">
-                  <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Loading...
-                </span>
-              )}
-            </div>
-            <BudgetEntries
-              entries={budgetEntries || []}
-              year={budgetYear}
-              budgetCategories={budget ? [
-                ...budget.costs.map((c) => ({ category: c.category, row: c.row, type: 'cost' })),
-                ...budget.revenues.map((c) => ({ category: c.category, row: c.row, type: 'revenue' })),
-              ] : []}
-              onAdd={handleAddBudgetEntry}
-              onUpdate={handleUpdateBudgetEntry}
-              onDelete={handleDeleteBudgetEntry}
-              onSeed={handleSeedBudgetEntries}
-              loading={budgetEntriesLoading}
-              seededScenarios={seededScenarios}
-            />
-          </div>
-        )}
+      {/* Activity Drawer */}
+      <ActivityDrawer
+        open={activityDrawerOpen}
+        onClose={() => setActivityDrawerOpen(false)}
+        entries={activityLog}
+        loading={activityLoading}
+        onRefresh={loadActivity}
+      />
 
-        {/* Charts tab */}
-        {tab === 'charts' && (
-          <ChartsView yearly={chartsYearly} yoyQoQ={chartsYoYQoQ} loading={chartsLoading} />
-        )}
-
-        {/* Activity tab */}
-        {tab === 'activity' && (
-          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between">
-              <span className="text-sm text-on-surface-secondary">
-                {!activityLoading && `${activityLog.length} entries`}
-              </span>
-              <button onClick={loadActivity} className={BUTTON_GHOST} title="Refresh">
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
-                Refresh
-              </button>
-            </div>
-            <ActivityLog entries={activityLog} loading={activityLoading} />
-          </div>
-        )}
-
-
-
-      </main>
-
+      {/* Settings Panel */}
       <SettingsPanel
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -926,6 +1082,6 @@ export default function App() {
           setNeedsSetup(true);
         }}
       />
-    </div>
+    </>
   );
 }

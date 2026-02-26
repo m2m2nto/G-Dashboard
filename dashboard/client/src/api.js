@@ -74,6 +74,14 @@ export const compactTransactions = (year, month) =>
 
 export const getBudgetCategories = (year) => request(`/metadata/budget-categories?year=${encodeURIComponent(year)}`);
 
+export const getCfBudgetMap = () => request('/metadata/cf-budget-map');
+export const updateCfBudgetMapping = (cfCategory, budgetCategory, budgetRow) =>
+  request(`/metadata/cf-budget-map/${encodeURIComponent(cfCategory)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ budgetCategory, budgetRow }),
+  });
+
 export const getActivity = () => request('/activity');
 
 export const getYearlySummary = () => request('/charts/yearly');

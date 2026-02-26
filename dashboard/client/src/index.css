@@ -39,3 +39,46 @@ body {
 .material-symbols-outlined.filled {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
 }
+
+/* Sidebar collapse transition */
+.sidebar-transition {
+  transition: width 200ms ease-in-out;
+}
+
+/* Activity drawer slide */
+@keyframes drawerSlideIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes drawerSlideOut {
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
+}
+
+.drawer-enter {
+  animation: drawerSlideIn 300ms ease-in-out forwards;
+}
+
+.drawer-exit {
+  animation: drawerSlideOut 300ms ease-in-out forwards;
+}
+
+@keyframes backdropFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.backdrop-enter {
+  animation: backdropFadeIn 300ms ease-in-out forwards;
+}
+
+/* Animated counter */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.count-up {
+  animation: countUp 400ms ease-out forwards;
+}

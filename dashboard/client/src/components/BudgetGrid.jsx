@@ -494,8 +494,9 @@ const BUDGET_MARGIN_ROW_FE = 27;
 // Main BudgetGrid
 // ---------------------------------------------------------------------------
 
-export default function BudgetGrid({ data, year }) {
+export default function BudgetGrid({ data, year, onConsuntivoClick }) {
   const [view, setView] = useState('annual');
+  const handleClick = onConsuntivoClick || (() => {});
 
   if (!data) return <BudgetSkeleton />;
 
@@ -525,8 +526,8 @@ export default function BudgetGrid({ data, year }) {
         </button>
       </div>
 
-      {view === 'annual' && <AnnualSummary data={data} onConsuntivoClick={() => {}} />}
-      {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={() => {}} />}
+      {view === 'annual' && <AnnualSummary data={data} onConsuntivoClick={handleClick} />}
+      {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={handleClick} />}
     </div>
   );
 }

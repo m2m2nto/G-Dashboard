@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { CONTROL_COMPACT, BUTTON_PRIMARY } from '../ui.js';
 
-export default function TransactionForm({ categories, elements, categoryHints, budgetCategories, onSubmit, submitting }) {
+export default function TransactionForm({ categories, elements, categoryHints, onSubmit, submitting }) {
   const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 10);
@@ -15,8 +15,6 @@ export default function TransactionForm({ categories, elements, categoryHints, b
     inflow: '',
     outflow: '',
     cashFlow: '',
-    budgetCategory: '',
-    budgetRow: '',
   });
   const [errors, setErrors] = useState({});
   const cashFlowManual = useRef(false);
@@ -58,12 +56,6 @@ export default function TransactionForm({ categories, elements, categoryHints, b
       return;
     }
 
-    if (name === 'budgetCategory') {
-      const cat = (budgetCategories || []).find((c) => c.category === value);
-      setForm((f) => ({ ...f, budgetCategory: value, budgetRow: cat ? cat.row : '' }));
-      return;
-    }
-
     setForm((f) => {
       const next = { ...f, [name]: value };
       if (name === 'notes' && next.transaction && !cashFlowManual.current) {
@@ -80,16 +72,6 @@ export default function TransactionForm({ categories, elements, categoryHints, b
         if ((isInflow && next.cashFlow.startsWith('C-')) || (isOutflow && next.cashFlow.startsWith('R-'))) {
           next.cashFlow = '';
           cashFlowManual.current = false;
-        }
-      }
-      // Clear mismatched budget category when flow direction changes
-      if ((name === 'inflow' || name === 'outflow') && next.budgetCategory) {
-        const isInflow = Number(next.inflow) > 0;
-        const isOutflow = Number(next.outflow) > 0;
-        const budgetCat = (budgetCategories || []).find((c) => c.category === next.budgetCategory);
-        if (budgetCat && ((isInflow && budgetCat.type === 'cost') || (isOutflow && budgetCat.type === 'revenue'))) {
-          next.budgetCategory = '';
-          next.budgetRow = '';
         }
       }
       return next;
@@ -155,8 +137,6 @@ export default function TransactionForm({ categories, elements, categoryHints, b
       inflow: '',
       outflow: '',
       cashFlow: '',
-      budgetCategory: '',
-      budgetRow: '',
     }));
   };
 
@@ -271,33 +251,6 @@ export default function TransactionForm({ categories, elements, categoryHints, b
             </p>
           )}
         </div>
-        {budgetCategories && budgetCategories.length > 0 && (
-        <div className="col-span-2">
-          <label className="block text-xs font-medium text-on-surface-secondary mb-1">Budget category</label>
-          <select
-            name="budgetCategory"
-            value={form.budgetCategory}
-            onChange={handleChange}
-            className={inputClass}
-          >
-            <option value="">-- None --</option>
-            {(!flowDirection || flowDirection === 'outflow') && (
-              <optgroup label="Costs">
-                {budgetCategories.filter((c) => c.type === 'cost').map((c) => (
-                  <option key={c.row} value={c.category}>{c.category}</option>
-                ))}
-              </optgroup>
-            )}
-            {(!flowDirection || flowDirection === 'inflow') && (
-              <optgroup label="Revenues">
-                {budgetCategories.filter((c) => c.type === 'revenue').map((c) => (
-                  <option key={c.row} value={c.category}>{c.category}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-        </div>
-        )}
       </div>
 
       <button

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { readCashFlowCategories, readElements, readElementsDetail, getCategoryHints, updateElementCategory, readBudgetGenerale } from '../services/excel.js';
 import { CATEGORY_TO_CF_ROW } from '../config.js';
 import { appendEntry } from '../services/audit.js';
+import { readCfBudgetMap, updateCfBudgetMapping, deleteCfBudgetMapping } from '../services/cfBudgetCategoryMap.js';
 
 const router = Router();
 
@@ -78,6 +79,31 @@ router.get('/budget-categories', async (req, res) => {
     if (err.message?.includes('not configured')) {
       return res.json([]);
     }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/cf-budget-map', async (_req, res) => {
+  try {
+    const map = await readCfBudgetMap();
+    res.json(map);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/cf-budget-map/:cfCategory', async (req, res) => {
+  try {
+    const cfCategory = req.params.cfCategory;
+    const { budgetCategory, budgetRow } = req.body;
+    if (!budgetCategory) {
+      await deleteCfBudgetMapping(cfCategory);
+    } else {
+      await updateCfBudgetMapping(cfCategory, budgetCategory, budgetRow);
+    }
+    const map = await readCfBudgetMap();
+    res.json(map);
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
