@@ -13,7 +13,6 @@ import ChartsView from './components/ChartsView.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
 import WelcomeSetup from './components/WelcomeSetup.jsx';
 import AppLayout from './components/AppLayout.jsx';
-import ActivityDrawer from './components/ActivityDrawer.jsx';
 import ActivityLog from './components/ActivityLog.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
 import SubTabBar from './components/SubTabBar.jsx';
@@ -83,8 +82,6 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('g-dash-sidebar-collapsed') === 'true';
   });
-  const [activityDrawerOpen, setActivityDrawerOpen] = useState(false);
-
   // ── Global year ──
   const [globalYear, setGlobalYear] = useState(String(new Date().getFullYear()));
   const [txYears, setTxYears] = useState([]);
@@ -150,13 +147,6 @@ export default function App() {
     const set = new Set([...txYears, ...cfYears, ...budgetYears]);
     return [...set].sort((a, b) => b - a).map(String);
   }, [txYears, cfYears, budgetYears]);
-
-  // ── Activity badge count ──
-  const activityBadgeCount = useMemo(() => {
-    const lastViewed = parseInt(localStorage.getItem('g-dash-activity-viewed') || '0', 10);
-    if (!lastViewed || !activityLog.length) return activityLog.length;
-    return activityLog.filter((e) => new Date(e.ts).getTime() > lastViewed).length;
-  }, [activityLog]);
 
   // ── Sidebar collapse persistence ──
   useEffect(() => {
@@ -492,13 +482,12 @@ export default function App() {
       // Escape closes drawers/modals
       if (e.key === 'Escape') {
         if (showSettings) { setShowSettings(false); return; }
-        if (activityDrawerOpen) { setActivityDrawerOpen(false); return; }
         if (showForm) { setShowForm(false); return; }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [showSettings, activityDrawerOpen, showForm]);
+  }, [showSettings, showForm]);
 
   // ── Filter logic ──
   const normalize = (value) => String(value || '').toLowerCase();
@@ -644,11 +633,6 @@ export default function App() {
         allYears={allYears}
         globalYear={globalYear}
         onYearChange={setGlobalYear}
-        activityCount={activityBadgeCount}
-        onToggleActivity={() => {
-          setActivityDrawerOpen((v) => !v);
-          if (!activityDrawerOpen) loadActivity();
-        }}
         users={users}
         currentUser={currentUser}
         onSwitchUser={async (name) => {
@@ -1062,15 +1046,6 @@ export default function App() {
         )}
 
       </AppLayout>
-
-      {/* Activity Drawer */}
-      <ActivityDrawer
-        open={activityDrawerOpen}
-        onClose={() => setActivityDrawerOpen(false)}
-        entries={activityLog}
-        loading={activityLoading}
-        onRefresh={loadActivity}
-      />
 
       {/* Settings Panel */}
       <SettingsPanel

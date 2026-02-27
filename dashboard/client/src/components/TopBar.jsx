@@ -32,8 +32,6 @@ export default function TopBar({
   allYears,
   globalYear,
   onYearChange,
-  activityCount,
-  onToggleActivity,
   users,
   currentUser,
   onSwitchUser,
@@ -83,20 +81,6 @@ export default function TopBar({
       {allYears.length > 0 && (
         <YearSelector years={allYears} selected={globalYear} onChange={onYearChange} />
       )}
-
-      {/* Activity bell */}
-      <button
-        onClick={onToggleActivity}
-        className={`${BUTTON_ICON} relative`}
-        title="Activity"
-      >
-        <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>notifications</span>
-        {activityCount > 0 && (
-          <span className="absolute top-1 right-1 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-status-negative text-white text-[10px] font-bold leading-none">
-            {activityCount > 99 ? '99+' : activityCount}
-          </span>
-        )}
-      </button>
 
       {/* User switcher */}
       <UserSwitcher

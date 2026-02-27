@@ -11,8 +11,6 @@ export default function AppLayout({
   allYears,
   globalYear,
   onYearChange,
-  activityCount,
-  onToggleActivity,
   users,
   currentUser,
   onSwitchUser,
@@ -43,8 +41,6 @@ export default function AppLayout({
           allYears={allYears}
           globalYear={globalYear}
           onYearChange={onYearChange}
-          activityCount={activityCount}
-          onToggleActivity={onToggleActivity}
           users={users}
           currentUser={currentUser}
           onSwitchUser={onSwitchUser}
