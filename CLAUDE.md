@@ -39,17 +39,17 @@ Both are injected at build time via Vite `define` (`__APP_VERSION__`, `__APP_BUI
 
 ### Build & Release Workflow
 
-Every time we push to main, follow this sequence:
+Every time we push to main, follow this sequence **in order** — do NOT push until the build is complete:
 
 1. **Run all tests**: `npm test` — if any fail, **stop and fix before continuing**
-2. **Increment the `"buildNumber"` number** in `dashboard/package.json`
-3. **Commit and push**
-4. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` (from `dashboard/`)
-5. **Copy the .app to the project root**: `cp -R dashboard/dist/electron/mac-arm64/GL-Dashboard.app .` (so the latest build is always accessible at the top level)
+2. **Increment the `"buildNumber"`** in `dashboard/package.json`
+3. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` (from `dashboard/`)
+4. **Copy the .app to the project root**: `cp -R dashboard/dist/electron/mac-arm64/G-Dashboard.app .`
+5. **Commit and push** — only after the build succeeds and the .app is in place
 
 The build script handles the client build automatically, reads version+build from `package.json`, and injects them into the Electron app.
 
-**This is mandatory** — every push to main must be followed by `bash scripts/build-electron.sh` and the .app copy so the desktop app stays up to date.
+**This is mandatory** — the Electron build and .app copy must happen **before** committing and pushing so that every commit on main corresponds to a verified, working desktop build.
 
 ## Architecture
 
