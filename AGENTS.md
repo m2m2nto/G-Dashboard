@@ -1,63 +1,241 @@
-# Global Codex Guidance
+# AGENTS.md
 
-Applies to every Codex session on this machine; defer to repo or subdirectory AGENTS.md when they provide more specific instructions.
+This file provides guidance to Codex and other AI agents when working with code in this repository.
 
-## How to use this file
+For the full changelog, see [HANDOFF.md](HANDOFF.md).
 
-* Skim once at the start of a session to align on global policies.
-* Follow project or folder AGENTS.md files for task-specific commands and nuances.
-* Ask the user when instructions conflict or feel unsafe.
+## Project Overview
 
-## Operating mode
+GL-Dashboard — a full-stack financial management app for tracking banking transactions, cash flow projections, and budgets. Italian company context (Italian month names, EUR currency, Italian-style category naming).
 
-* Host: untouched unless user explicitly requests host changes. Assume you are running on a CachyOS host (Arch-based Linux).
-* Execution: run deterministically, show diffs, prefer smallest verifiable unit (lint/typecheck/test). Stop on failure.
-* Sensitive files: never touch `.env`, secrets, infra config, or production data without explicit instruction.
+## Environment
 
-## Agent conduct
+- Host: macOS (Darwin)
+- Runtime: Node.js (ES modules)
+- Workspace root: this repository
+- Working directory for all commands: `dashboard/`
 
-* Verify assumptions before executing commands; call out uncertainties first.
-* Ask for clarification when the request is ambiguous, destructive, or risky.
-* Summarize intent before performing multi-step fixes so the user can redirect early.
-* Cite the source when using documentation; quote exact lines instead of paraphrasing from memory.
-* Break work into incremental steps and confirm each step with the smallest relevant check before moving on.
+## Development Commands
 
-## Documentation and MCP
+All commands run from `dashboard/`:
 
-* Use **Context7** via MCP for up-to-date, version-specific docs.
-* Always `resolve-library-id` before `get-library-docs` unless ID is known.
-* Fetch minimal targeted docs. Summarize inline; do not paste dumps.
-* When API uncertainty remains: produce a runnable repro snippet and verify locally.
-* If the needed documentation cannot be found, say so explicitly and explain the fallback approach.
-* If you already know the Context7 library ID (e.g. `/supabase/supabase`), provide it directly to skip resolution.
+```bash
+# Start both client and server concurrently
+npm run dev
 
-## State & living docs
+# Start only the server (port 3001, auto-reloads via --watch)
+npm run dev:server
 
-Maintain:
+# Start only the client (port 5173, Vite dev server)
+npm run dev:client
 
-* `README.md` — stable overview.
-* `HANDOFF.md` — current status for continuity.
+# Run all tests (server + client)
+npm test
 
-Refresh triggers: contradictions, omissions, flaky tests, or version uncertainty.
+# Production build (client only) — bump version first!
+npm run build --workspace=client
+```
 
-Refresh includes:
+No linter or type checker is configured.
 
-* `README.md`: purpose, architecture, stack with versions, run instructions, changelog-lite.
-* `HANDOFF.md`: current status, next steps, test results, artifacts, environment details.
+## Version & Build Management
 
-## Commands and checks
+Version and build number live in `dashboard/package.json`:
+- `"version"` — semver (e.g. `"1.1.0"`), bump for feature releases
+- `"build"` — integer counter, **increment on every build**
 
-* Show plan before large edits.
-* Capture exit codes and logs.
-* Run impacted checks only:
-  * lint → changed files
-  * typecheck → touched modules
-  * test → nearest tests, expand only if upstream failure
-* Stop on failure; summarize root cause; propose smallest fix.
-* If no automated checks apply, make that explicit and describe what manual validation was performed.
-* After each incremental change, execute the quickest verifying command from the applicable AGENTS.md (for example, a focused test or lint target) before tackling the next task.
+Both are injected at build time via Vite `define` (`__APP_VERSION__`, `__APP_BUILD__`) and shown in Settings as "GL-Dashboard v1.1.0 (4)".
 
-## Fix and test
+### Build & Release Workflow
 
-* whenver you are requested to fix a bug, ask is the bug has been resolved
-* once the fix is done, write a test for it to avoid having it again in the future
+Every time we push to main:
+
+1. **Run all tests**: `npm test` — if any fail, **stop and fix**
+2. **Increment the `"build"` number** in `dashboard/package.json`
+3. **Commit and push**
+4. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` (from `dashboard/`)
+
+This is mandatory — every push to main must be followed by the Electron build.
+
+## Architecture
+
+### Monorepo Layout
+
+```
+dashboard/
+├── client/          # React 19 + Vite 6 + Tailwind CSS 3
+│   └── src/
+│       ├── App.jsx          # Single state container (all state via hooks)
+│       ├── api.js           # Fetch wrapper for /api/*
+│       ├── ui.js            # Shared Tailwind class constants
+│       └── components/      # ~27 React components
+└── server/          # Express 4 (Node, ES modules)
+    ├── index.js             # App setup, route mounting
+    ├── config.js            # File paths, Italian months, category→row mappings
+    ├── routes/              # 8 route modules
+    └── services/            # 8 service modules (excel.js is the core)
+```
+
+### Sections & Navigation
+
+Six main sections with sub-tab views:
+
+| Section | Sub-tabs | Key Components |
+|---------|----------|----------------|
+| **Home** | — | `DashboardHome`, `MetricCard` |
+| **Transactions** | — | `TransactionTable`, `TransactionForm`, `MonthSelector` |
+| **Cash Flow** | Grid, Categories, Mapping | `CashFlowGrid`, `ElementsTable`, `CategoryMapping` |
+| **Budget** | Overview, Projection, Entries | `BudgetGrid`, `CashFlowProjection`, `BudgetEntries` |
+| **Analytics** | Cash Flow, Budget | `ChartsView`, `BudgetCharts` |
+| **Activity** | — | `ActivityLog` |
+
+### State Management
+
+- `App.jsx` is the single state container — `useState` hooks, props flow down
+- No Redux, Context, or external state library
+- Each section loads data via `useEffect` when active
+- Handlers: `handle*` naming, call API → reload pattern
+- Toast notifications: `pushToast(type, text)`
+
+### Persistence — Two Storage Patterns
+
+| Storage | What | Where |
+|---------|------|-------|
+| **Excel files** | Transactions, cash flow, budget sheets | Configured via project manifest |
+| **JSON files** | Budget entries, category mappings, audit log | `.gl-data/` directory |
+
+JSON files in `.gl-data/`:
+- `cf-budget-category-map.json` — CF↔Budget category mapping
+- `transaction-budget-map-{year}.json` — Legacy per-transaction budget mappings
+- `budget-entries-{year}.json` — Budget entry records
+- `audit/{year}/{month}/{day}.jsonl` — Activity log
+
+### Excel Service (services/excel.js)
+
+Hybrid approach:
+
+| Library | Purpose |
+|---------|---------|
+| **ExcelJS** | Read-only parsing |
+| **xlsx-populate** | Cell-level writes |
+| **JSZip** (via xlsx-populate) | XML-level table structure and cash flow sync |
+
+Why JSZip? Excel tables store structure in XML inside .xlsx. Table ranges, formulas, and calcChain must be updated at XML level when adding/deleting rows.
+
+### API Endpoints
+
+**Transactions** — `/api/transactions`
+- `GET /years`, `GET /:year/:month`, `POST /:year/:month`, `PUT /:year/:month/:row`, `DELETE /:year/:month/:row`
+- `POST /:year/:month/compact`, `GET /budget-summary/:year`
+
+**Cash Flow** — `/api/cashflow`
+- `GET /years`, `GET /:year`, `POST /sync-all`, `POST /sync/:month`, `GET /drill/:month/:category`
+
+**Metadata** — `/api/metadata`
+- `GET /categories`, `GET /elements`, `GET /elements-detail`, `GET /category-hints`, `GET /budget-categories`
+- `PUT /elements/:name/category`, `GET /cf-budget-map`, `PUT /cf-budget-map/:cfCategory`
+
+**Budget** — `/api/budget`
+- `GET /years`, `GET /:year`, `GET /:year/scenario/:scenario`, `GET /:year/cf/:scenario`
+
+**Budget Entries** — `/api/budget-entries`
+- `GET /:year`, `POST /:year`, `PUT /:year/:id`, `DELETE /:year/:id`, `POST /:year/seed/:scenario`
+
+**Charts** — `/api/charts` — `GET /yearly`, `GET /yoy-qoq`
+
+**Activity** — `GET /api/activity`
+
+**Settings** — `/api/settings`
+- `GET /`, `PUT /`, `POST /reset`
+- `GET /browse`, `GET /browse-files`
+- `POST /check-dir`, `POST /check-file`, `POST /check-project`, `POST /detect-files`
+- `POST /open-project`, `POST /create-project`
+- `GET /users`, `POST /users`, `PUT /users/active`
+
+## UI & Styling Conventions
+
+### Design Tokens (Tailwind)
+
+Key colors (in `tailwind.config.js`):
+- `primary` / `primary-hover` / `primary-light` — blue (#1a73e8)
+- `surface` / `surface-dim` / `surface-container` / `surface-border` — whites/grays
+- `on-surface` / `on-surface-secondary` / `on-surface-tertiary` — text hierarchy
+- `status-positive` / `status-negative` / `status-warning` — feedback
+- Shadows: `shadow-elevation-1` through `shadow-elevation-4`
+
+### Shared Class Constants (`ui.js`)
+
+Use these instead of raw Tailwind for interactive elements:
+- **Buttons**: `BUTTON_PRIMARY`, `BUTTON_SECONDARY`, `BUTTON_NEUTRAL`, `BUTTON_GHOST`, `BUTTON_DANGER`, `BUTTON_ICON`, `BUTTON_PILL_BASE`
+- **Controls**: `CONTROL_PADDED`, `CONTROL_COMPACT`
+- **Sidebar**: `SIDEBAR_ITEM`, `SIDEBAR_ITEM_ACTIVE`, `SIDEBAR_ITEM_COLLAPSED`, `SIDEBAR_ITEM_COLLAPSED_ACTIVE`
+- **Tabs**: `SUB_TAB`, `SUB_TAB_ACTIVE`, `SUB_TAB_INACTIVE`
+
+### Icons
+
+Material Symbols Outlined (Google Fonts):
+```jsx
+<span className="material-symbols-outlined" style={{ fontSize: '18px' }}>icon_name</span>
+```
+
+### Font
+
+Inter (with system-ui, sans-serif fallback)
+
+## Key Conventions
+
+- Months use Italian 3-letter abbreviations: GEN, FEB, MAR, APR, MAG, GIU, LUG, AGO, SET, OTT, NOV, DIC
+- Cash flow categories prefixed with `C-` (costs) or `R-` (revenue)
+- Budget category on transactions is **derived** via CF→Budget mapping — not stored per-transaction
+- Formula rows in cash flow (`CF_FORMULA_ROWS`) — **never overwrite**
+- Excel balance column uses formulas — **never overwrite formula cells**
+- Auto-hint system suggests CF categories based on transaction name + notes frequency
+- Currency: `Number(v).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })`
+- File-level mutex (`withLock`) pattern in JSON persistence services
+
+## Agent Conduct
+
+- Verify assumptions before executing commands; call out uncertainties first
+- Ask for clarification when the request is ambiguous, destructive, or risky
+- Summarize intent before multi-step changes so the user can redirect early
+- Break work into incremental steps and verify each before moving on
+- Never touch `.env`, secrets, infra config, or production data without explicit instruction
+- Show diffs and capture exit codes
+
+## Fix and Test
+
+### Bug fix workflow
+
+1. **Fix the bug**
+2. **Ask the user** if the bug has been resolved
+3. **Write a regression test** for the exact scenario that failed — mandatory
+4. **Run all tests** (`npm test` from `dashboard/`) to verify nothing else broke
+
+### Test framework
+
+Node's built-in test runner (`node:test` + `node:assert/strict`).
+
+```bash
+npm test                              # all tests
+npm run test --workspace=server       # server only
+npm run test --workspace=client       # client only
+```
+
+Test files: `server/tests/*.test.js` and `client/tests/*.test.js`.
+
+### Rules
+
+- Every bug fix must have a test
+- Before pushing, always run `npm test` — if any fail, **do not push**
+- Tests must be fast, self-contained — no external dependencies, no Excel files, no running server
+- Test pure logic by importing functions directly
+- Name tests descriptively after the bug or behavior they verify
+
+## Living Documents
+
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | Full project guidance for Claude Code |
+| `AGENTS.md` | Full project guidance for Codex / other agents (this file) |
+| `HANDOFF.md` | Changelog — session-by-session log of changes |
+| `README.md` | Stable project overview |

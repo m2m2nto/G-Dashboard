@@ -1,28 +1,46 @@
-# Handoff
+# Changelog
 
-Date: 2026-02-19
+Session-by-session log of changes made to GL-Dashboard.
 
-## Status
+For project architecture and conventions, see [CLAUDE.md](CLAUDE.md).
 
-- Server dependency and validation fixes in place.
-- Cash flow sync now resolves sheets by year and is tested.
-- IBAN normalization + light format validation added.
+---
 
-## Next steps
+## 2026-02-28 — v1.1.0 (build 4)
 
-- Add more route-level tests if needed (e.g., successful transaction create/update paths).
-- Consider adding caching or memoization for repeated workbook reads if performance becomes an issue.
-- Decide on stricter IBAN validation (checksum) if required.
+### CF → Budget Category Mapping
+- New "Mapping" sub-tab in Cash Flow section to link CF categories to budget categories
+- Backend: `server/services/cfBudgetCategoryMap.js` persists mapping in `.gl-data/cf-budget-category-map.json`
+- API: `GET/PUT /api/metadata/cf-budget-map` endpoints in `server/routes/metadata.js`
+- Frontend: `CategoryMapping.jsx` with type-filtered dropdowns and immediate save
 
-## Tests
+### Removed budget category from transactions
+- Budget category is now derived from CF→Budget mapping, no longer stored per-transaction
+- Removed budget category dropdown from `TransactionForm` and `TransactionTable`
+- Updated `budget-summary` endpoint to derive budget rows via mapping lookup
 
-- `npm run test --workspace=server`
+### UI cleanup
+- Removed activity bell icon and notification drawer from the top bar
 
-## Artifacts
+### Version display & build tracking
+- Added version footer in Settings panel: `GL-Dashboard v1.1.0 (4)`
+- Version and build number injected at build time via Vite `define` (`__APP_VERSION__`, `__APP_BUILD__`)
+- `"build"` field in root `package.json` incremented on every release
 
-- Excel workbooks in repo root: `Banking transactions - Gulliver Lux 2026.xlsx`, `Cash Flow Gulliver Lux.xlsx`.
+### Test infrastructure
+- Set up `node:test` + `node:assert/strict` for server tests
+- Added `npm test` script at root (runs both workspace test suites)
+- Mandatory regression tests on bug fixes per CLAUDE.md workflow
 
-## Environment
+### Build & release workflow
+- Updated CLAUDE.md with full build/release workflow
+- Electron app built via `bash scripts/build-electron.sh` after every push to main
 
-- Node.js (ESM)
-- Workspace: `/Users/danilo/Work/Claude AI/Gulliver Lux`
+---
+
+## 2026-02-19 — Initial setup
+
+### Server fixes
+- Server dependency and validation fixes
+- Cash flow sync resolves sheets by year (tested)
+- IBAN normalization + light format validation

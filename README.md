@@ -22,9 +22,10 @@ The app is also packaged as a **native macOS application** (via Electron), so it
 
 ## Overview
 
-- Backend (Node/Express) reads and writes to the Excel files in the repo root.
-- Frontend (Vite/React) provides the UI for transactions, cash flow, and elements.
-- Cash flow sync writes directly into the Cash Flow workbook while preserving Excel structure (formulas, charts, table ranges).
+- **Backend** (Node/Express) reads and writes Excel workbooks and persists auxiliary data as JSON in a `.gl-data/` directory.
+- **Frontend** (Vite/React) provides six sections: Home, Transactions, Cash Flow, Budget, Analytics, and Activity.
+- **Cash flow sync** writes directly into the Cash Flow workbook while preserving Excel structure (formulas, charts, table ranges).
+- **Desktop app** packaged via Electron for standalone macOS use.
 
 ## Stack
 
@@ -32,12 +33,13 @@ The app is also packaged as a **native macOS application** (via Electron), so it
 - Express 4.x
 - ExcelJS 4.x, XlsxPopulate 1.x, JSZip 3.x
 - React 19.x + Vite 6.x + Tailwind 3.x
+- Electron + electron-builder (desktop packaging)
 
 ## Run
 
 From `dashboard/`:
 
-```
+```bash
 npm install
 npm run dev
 ```
@@ -45,13 +47,18 @@ npm run dev
 - Client: http://localhost:5173
 - Server: http://localhost:3001
 
+To build the desktop app:
+
+```bash
+bash scripts/build-electron.sh
+```
+
 ## Notes
 
-- The server expects `Banking transactions - Gulliver Lux 2026.xlsx` and `Cash Flow Gulliver Lux.xlsx` in the repo root.
+- Excel file paths are configured through the Settings panel (project manifest). On first launch, the app prompts you to select or create a project pointing to your workbooks.
 - Cash flow sync targets the worksheet for the requested year (defaults to the latest numeric year in the workbook).
+- Auxiliary data (budget entries, category mappings, audit log) is stored as JSON in `.gl-data/` inside the project folder.
 
-## Changelog (recent)
+## Changelog
 
-- Added JSZip dependency for server runtime.
-- Cash flow sync now resolves the correct sheet by year.
-- Added transaction payload validation and tests.
+See [HANDOFF.md](HANDOFF.md) for a session-by-session log of changes.
