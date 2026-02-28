@@ -1,5 +1,6 @@
 import Sidebar from './Sidebar.jsx';
 import TopBar from './TopBar.jsx';
+import UpdateBanner from './UpdateBanner.jsx';
 
 const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
@@ -60,6 +61,8 @@ export default function AppLayout({
           onAddUser={onAddUser}
           isElectron={isElectron}
         />
+
+        <UpdateBanner />
 
         <main className="px-4 py-4 overflow-x-hidden">
           {children}

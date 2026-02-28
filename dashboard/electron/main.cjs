@@ -2,10 +2,12 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { fork } = require('child_process');
 const path = require('path');
 const net = require('net');
+const Updater = require('./updater.cjs');
 
 let mainWindow = null;
 let serverProcess = null;
 let serverPort = null;
+let updater = null;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -146,6 +148,21 @@ ipcMain.handle('dialog:openFiles', async (_event, options = {}) => {
   return filePaths;
 });
 
+// ── Update IPC handlers ──────────────────────────────────────────────
+
+ipcMain.handle('update:check', async () => {
+  if (updater) return updater.checkForUpdates();
+  return null;
+});
+
+ipcMain.handle('update:download', async () => {
+  if (updater) return updater.downloadUpdate();
+});
+
+ipcMain.handle('update:apply', () => {
+  if (updater) updater.applyAndRestart();
+});
+
 // ── App lifecycle ────────────────────────────────────────────────────
 
 app.on('ready', async () => {
@@ -159,6 +176,12 @@ app.on('ready', async () => {
       serverPort = await startServer(port);
     }
     createWindow(serverPort);
+
+    // Auto-check for updates after 5s (packaged builds only)
+    if (app.isPackaged) {
+      updater = new Updater(mainWindow);
+      setTimeout(() => updater.checkForUpdates(), 5000);
+    }
   } catch (err) {
     console.error('Startup failed:', err);
     app.quit();
