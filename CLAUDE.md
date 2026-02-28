@@ -45,11 +45,11 @@ Every time we push to main, follow this sequence:
 2. **Increment the `"build"` number** in `dashboard/package.json`
 3. **Commit and push**
 4. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` (from `dashboard/`)
-5. Output goes to `dashboard/dist/electron/`
+5. **Copy the .app to the project root**: `cp -R dashboard/dist/electron/mac-arm64/GL-Dashboard.app .` (so the latest build is always accessible at the top level)
 
 The build script handles the client build automatically, reads version+build from `package.json`, and injects them into the Electron app.
 
-**This is mandatory** — every push to main must be followed by `bash scripts/build-electron.sh` so the desktop app stays up to date.
+**This is mandatory** — every push to main must be followed by `bash scripts/build-electron.sh` and the .app copy so the desktop app stays up to date.
 
 ## Architecture
 
@@ -175,9 +175,10 @@ Key patterns:
 ### Design Tokens (Tailwind)
 
 Key semantic colors (defined in `tailwind.config.js`):
-- `primary` / `primary-hover` / `primary-light` — blue (#1a73e8 / #1557b0 / #e8f0fe)
+- `primary` / `primary-hover` / `primary-light` — warm blue (#2E6BAD / #245A91 / #EDF2F8)
+- `accent` / `accent-hover` / `accent-light` — Gulliver coral (#EB583D / #D14830 / #FEF0ED)
 - `surface` / `surface-dim` / `surface-container` / `surface-border` — whites/grays
-- `on-surface` / `on-surface-secondary` / `on-surface-tertiary` — text hierarchy
+- `on-surface` / `on-surface-secondary` / `on-surface-tertiary` — navy-tinted text hierarchy (#1B2B3D / #4D5E6F / #7E8D9B)
 - `status-positive` / `status-negative` / `status-warning` — semantic feedback
 - Elevation shadows: `shadow-elevation-1` through `shadow-elevation-4`
 

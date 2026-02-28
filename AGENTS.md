@@ -54,8 +54,9 @@ Every time we push to main:
 2. **Increment the `"build"` number** in `dashboard/package.json`
 3. **Commit and push**
 4. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` (from `dashboard/`)
+5. **Copy the .app to the project root**: `cp -R dashboard/dist/electron/mac-arm64/GL-Dashboard.app .`
 
-This is mandatory — every push to main must be followed by the Electron build.
+This is mandatory — every push to main must be followed by the Electron build and .app copy.
 
 ## Architecture
 
@@ -157,9 +158,10 @@ Why JSZip? Excel tables store structure in XML inside .xlsx. Table ranges, formu
 ### Design Tokens (Tailwind)
 
 Key colors (in `tailwind.config.js`):
-- `primary` / `primary-hover` / `primary-light` — blue (#1a73e8)
+- `primary` / `primary-hover` / `primary-light` — warm blue (#2E6BAD / #245A91 / #EDF2F8)
+- `accent` / `accent-hover` / `accent-light` — Gulliver coral (#EB583D / #D14830 / #FEF0ED)
 - `surface` / `surface-dim` / `surface-container` / `surface-border` — whites/grays
-- `on-surface` / `on-surface-secondary` / `on-surface-tertiary` — text hierarchy
+- `on-surface` / `on-surface-secondary` / `on-surface-tertiary` — navy-tinted text (#1B2B3D / #4D5E6F / #7E8D9B)
 - `status-positive` / `status-negative` / `status-warning` — feedback
 - Shadows: `shadow-elevation-1` through `shadow-elevation-4`
 

@@ -25,7 +25,7 @@ const BAR_COLORS = {
   certo: '#1e8e3e',
   possibile: '#f9ab00',
   ottimistico: '#7b1fa2',
-  consuntivo: '#1a73e8',
+  consuntivo: '#2E6BAD',
   margin: '#e8453c',
 };
 

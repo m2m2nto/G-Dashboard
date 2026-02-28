@@ -1,4 +1,5 @@
 import { SIDEBAR_ITEM, SIDEBAR_ITEM_ACTIVE, SIDEBAR_ITEM_COLLAPSED, SIDEBAR_ITEM_COLLAPSED_ACTIVE } from '../ui.js';
+import logoPng from '../assets/logo.png';
 
 const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: 'dashboard' },
@@ -23,9 +24,7 @@ export default function Sidebar({ section, onNavigate, collapsed, onToggle }) {
         title={collapsed ? 'Expand menu' : 'Collapse menu'}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-primary text-white text-xs font-bold shrink-0">
-            G
-          </span>
+          <img src={logoPng} alt="G" className="w-7 h-7 rounded-md shrink-0" />
           {!collapsed && (
             <span className="text-base font-semibold text-on-surface tracking-tight whitespace-nowrap">
               G-Dashboard
@@ -49,7 +48,7 @@ export default function Sidebar({ section, onNavigate, collapsed, onToggle }) {
               title={collapsed ? item.label : undefined}
             >
               {isActive && !collapsed && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary" />
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-accent" />
               )}
               <span className="material-symbols-outlined shrink-0" style={{ fontSize: '20px' }}>
                 {item.icon}

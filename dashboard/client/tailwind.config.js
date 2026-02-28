@@ -5,9 +5,14 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#1a73e8',
-          hover: '#1557b0',
-          light: '#e8f0fe',
+          DEFAULT: '#2E6BAD',
+          hover: '#245A91',
+          light: '#EDF2F8',
+        },
+        accent: {
+          DEFAULT: '#EB583D',
+          hover: '#D14830',
+          light: '#FEF0ED',
         },
         surface: {
           DEFAULT: '#ffffff',
@@ -16,9 +21,9 @@ export default {
           border: '#dadce0',
         },
         'on-surface': {
-          DEFAULT: '#202124',
-          secondary: '#5f6368',
-          tertiary: '#80868b',
+          DEFAULT: '#1B2B3D',
+          secondary: '#4D5E6F',
+          tertiary: '#7E8D9B',
         },
         status: {
           positive: '#1e8e3e',

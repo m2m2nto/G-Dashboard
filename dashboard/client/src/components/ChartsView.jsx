@@ -26,7 +26,7 @@ function fmtK(v) {
 const COLORS = {
   revenue: '#1e8e3e',
   costs: '#d93025',
-  margin: '#1a73e8',
+  margin: '#2E6BAD',
   financing: '#f9ab00',
 };
 
