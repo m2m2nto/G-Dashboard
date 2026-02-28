@@ -33,7 +33,7 @@ No linter is configured.
 
 Version and build number live in `dashboard/package.json`:
 - `"version"` — semver (e.g. `"1.1.0"`), bump for feature releases
-- `"build"` — integer build counter (e.g. `42`), **increment on every build**
+- `"buildNumber"` — integer build counter (e.g. `42`), **increment on every build**
 
 Both are injected at build time via Vite `define` (`__APP_VERSION__`, `__APP_BUILD__`) and displayed in the Settings panel footer as "GL-Dashboard v1.1.0 (build 42)".
 
@@ -42,7 +42,7 @@ Both are injected at build time via Vite `define` (`__APP_VERSION__`, `__APP_BUI
 Every time we push to main, follow this sequence:
 
 1. **Run all tests**: `npm test` — if any fail, **stop and fix before continuing**
-2. **Increment the `"build"` number** in `dashboard/package.json`
+2. **Increment the `"buildNumber"` number** in `dashboard/package.json`
 3. **Commit and push**
 4. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` (from `dashboard/`)
 5. **Copy the .app to the project root**: `cp -R dashboard/dist/electron/mac-arm64/GL-Dashboard.app .` (so the latest build is always accessible at the top level)
