@@ -20,11 +20,14 @@ npm run dev:server
 # Start only the client (port 5173, Vite dev server)
 npm run dev:client
 
+# Run all tests (server + client)
+npm test
+
 # Production build (client only) — bump version first!
 npm run build --workspace=client
 ```
 
-No test framework or linter is configured.
+No linter is configured.
 
 ## Version & Build Management
 
@@ -38,14 +41,16 @@ Both are injected at build time via Vite `define` (`__APP_VERSION__`, `__APP_BUI
 
 Every time we push an update, follow this sequence:
 
-1. **Increment the `"build"` number** in `dashboard/package.json`
-2. **Build the client**: `npm run build --workspace=client`
-3. **Build the Electron/macOS app**: `bash scripts/build-macos.sh` (from `dashboard/`)
-4. Output goes to `dashboard/dist/GL-Dashboard.app`
+1. **Run all tests**: `npm test` — if any fail, **stop and fix before continuing**
+2. **Increment the `"build"` number** in `dashboard/package.json`
+3. **Build the client**: `npm run build --workspace=client`
+4. **Commit and push**
+5. **Build the Electron/macOS app**: `bash scripts/build-macos.sh` (from `dashboard/`)
+6. Output goes to `dashboard/dist/GL-Dashboard.app`
 
 The macOS build script reads version+build from `package.json` automatically and injects them into `Info.plist` and the launcher banner.
 
-**This is mandatory** — never push without building a new version of the app.
+**This is mandatory** — never push without running tests and building a new version of the app.
 
 ## Architecture
 
@@ -207,7 +212,35 @@ Inter (with system-ui, sans-serif fallback)
 - Currency formatting: `Number(v).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })`
 - File-level mutex (`withLock`) pattern used in JSON persistence services to prevent concurrent write corruption
 
-## Fix and test
+## Fix and Test
 
-* Whenever you are requested to fix a bug, ask if the bug has been resolved
-* Once the fix is done, write a test for it to avoid having it again in the future
+### Bug fix workflow
+
+1. **Fix the bug**
+2. **Ask the user** if the bug has been resolved
+3. **Write a regression test** for the exact use case that failed — this is mandatory, not optional
+4. **Run all tests** (`npm test` from `dashboard/`) to make sure nothing else broke
+
+### Test framework
+
+Tests use **Node's built-in test runner** (`node:test` + `node:assert/strict`).
+
+```bash
+# Run all tests (server + client)
+npm test
+
+# Run only server tests
+npm run test --workspace=server
+
+# Run only client tests
+npm run test --workspace=client
+```
+
+Test files live in `server/tests/` and `client/tests/`, named `*.test.js`.
+
+### Rules
+
+- **Every bug fix must have a test.** After fixing a bug, write a `*.test.js` file (or add to an existing one) that reproduces the exact scenario that failed and asserts the correct behavior.
+- **Before pushing, always run `npm test`.** If any test fails, **do not push** — fix the failing test first, then push.
+- Tests should be fast and self-contained — no external dependencies, no Excel files, no running server. Test pure logic (validation, mapping, data transformation) by importing functions directly.
+- Name tests descriptively after the bug or behavior they verify.
