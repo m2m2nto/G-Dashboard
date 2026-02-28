@@ -41,6 +41,25 @@ function withLock(filePath, fn) {
 }
 
 // ---------------------------------------------------------------------------
+// Money-column styling helper (xlsx-populate)
+// ---------------------------------------------------------------------------
+// Inflow (F=6) green, Outflow (G=7) red, Balance (H=8) blue — EUR accounting
+const DATA_COL_STYLES = {
+  6: { fontColor: '00B050' },   // F = Inflow green
+  7: { fontColor: 'FF0000' },   // G = Outflow red
+  8: { fontColor: '0070C0' },   // H = Balance blue
+};
+
+function applyMoneyStyles(ws, row, isTotals) {
+  for (const [col, cfg] of Object.entries(DATA_COL_STYLES)) {
+    const c = Number(col);
+    ws.cell(row, c).style('fontColor', cfg.fontColor);
+    ws.cell(row, c).style('numberFormat', '_(* #,##0.00_)');
+    if (isTotals) ws.cell(row, c).style('bold', true);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers (exceljs read-only)
 // ---------------------------------------------------------------------------
 
@@ -415,17 +434,9 @@ export function compactTable(month, year = '2026') {
     const newTotalsRow = writePos;
     const newLastRow = writePos;
 
-    // Save totals row styles before overwriting
-    const totalsStyles = {};
-    const styleProps = ['numberFormat', 'fontColor', 'bold', 'italic', 'fontSize', 'fontFamily', 'fill', 'horizontalAlignment', 'verticalAlignment'];
-    for (let col = 1; col <= 10; col++) {
-      totalsStyles[col] = ws.cell(lastRow, col).style(styleProps);
-    }
-
-    // Write totals at new position (with formatting)
+    // Write totals at new position
     for (let col = 1; col <= 10; col++) {
       ws.cell(newTotalsRow, col).value(undefined);
-      ws.cell(newTotalsRow, col).style(totalsStyles[col]);
     }
     ws.cell(`A${newTotalsRow}`).value('Total');
     ws.cell(`F${newTotalsRow}`).formula(`SUM(F2:F${newLastDataRow})`);
@@ -433,6 +444,7 @@ export function compactTable(month, year = '2026') {
     ws.cell(`H${newTotalsRow}`).formula(
       `SUM(${tableName}[[#Totals],[Inflow]]-${tableName}[[#Totals],[Outflow]])`
     );
+    applyMoneyStyles(ws, newTotalsRow, true);
 
     // Clear old rows below new totals
     for (let r = newTotalsRow + 1; r <= lastRow; r++) {
@@ -509,23 +521,14 @@ export function addTransaction(month, data, year = '2026') {
   const ws = wb.sheet(month);
   if (!ws) throw new Error(`Sheet "${month}" not found`);
 
-  // Save totals row styles before overwriting
-  const totalsStyles = {};
-  const styleProps = ['numberFormat', 'fontColor', 'bold', 'italic', 'fontSize', 'fontFamily', 'fill', 'horizontalAlignment', 'verticalAlignment'];
-  for (let col = 1; col <= 10; col++) {
-    totalsStyles[col] = ws.cell(lastRow, col).style(styleProps);
-  }
-
-  // Copy totals row label + formulas to the new position (with formatting)
+  // Copy totals row label + formulas to the new position
   ws.cell(`A${newTotalsRow}`).value('Total');
   ws.cell(`F${newTotalsRow}`).formula(`SUM(F2:F${newDataRow})`);
   ws.cell(`G${newTotalsRow}`).formula(`SUM(G2:G${newDataRow})`);
   ws.cell(`H${newTotalsRow}`).formula(
     `SUM(${tableName}[[#Totals],[Inflow]]-${tableName}[[#Totals],[Outflow]])`
   );
-  for (let col = 1; col <= 10; col++) {
-    ws.cell(newTotalsRow, col).style(totalsStyles[col]);
-  }
+  applyMoneyStyles(ws, newTotalsRow, true);
 
   // Clear old totals row (it becomes a data row)
   for (let col = 1; col <= 10; col++) {
@@ -546,6 +549,9 @@ export function addTransaction(month, data, year = '2026') {
   ws.cell(`H${newDataRow}`).formula(`SUM(H${newDataRow - 1},F${newDataRow},-G${newDataRow})`);
   if (data.cashFlow) ws.cell(`I${newDataRow}`).value(data.cashFlow);
   if (data.comments) ws.cell(`J${newDataRow}`).value(data.comments);
+
+  // Apply money column styles (font colors + accounting number format)
+  applyMoneyStyles(ws, newDataRow, false);
 
   await wb.toFileAsync(filePath);
 
@@ -594,9 +600,14 @@ export function updateTransaction(month, row, data, year = '2026') {
   if (data.transaction !== undefined) ws.cell(`C${row}`).value(data.transaction || undefined);
   if (data.notes !== undefined) ws.cell(`D${row}`).value(data.notes || undefined);
   if (data.iban !== undefined) ws.cell(`E${row}`).value(data.iban || undefined);
-  if (data.inflow !== undefined) ws.cell(`F${row}`).value(data.inflow ? Number(data.inflow) : undefined);
-  if (data.outflow !== undefined) ws.cell(`G${row}`).value(data.outflow ? Number(data.outflow) : undefined);
-  // H (Balance) is a formula — never touch it
+  if (data.inflow !== undefined) {
+    ws.cell(`F${row}`).value(data.inflow ? Number(data.inflow) : undefined);
+  }
+  if (data.outflow !== undefined) {
+    ws.cell(`G${row}`).value(data.outflow ? Number(data.outflow) : undefined);
+  }
+  // Apply money column styles (font colors + accounting number format)
+  applyMoneyStyles(ws, row, false);
   if (data.cashFlow !== undefined) ws.cell(`I${row}`).value(data.cashFlow || undefined);
   if (data.comments !== undefined) ws.cell(`J${row}`).value(data.comments || undefined);
 
@@ -649,17 +660,9 @@ export function deleteTransaction(month, row, year = '2026') {
   const newTotalsRow = lastDataRow;           // totals moves up one
   const newLastRow = lastRow - 1;
 
-  // Save totals row styles before overwriting
-  const totalsStyles = {};
-  const styleProps = ['numberFormat', 'fontColor', 'bold', 'italic', 'fontSize', 'fontFamily', 'fill', 'horizontalAlignment', 'verticalAlignment'];
-  for (let col = 1; col <= 10; col++) {
-    totalsStyles[col] = ws.cell(lastRow, col).style(styleProps);
-  }
-
-  // Write totals at new position (with formatting)
+  // Write totals at new position
   for (let col = 1; col <= 10; col++) {
     ws.cell(newTotalsRow, col).value(undefined);
-    ws.cell(newTotalsRow, col).style(totalsStyles[col]);
   }
   ws.cell(`A${newTotalsRow}`).value('Total');
   ws.cell(`F${newTotalsRow}`).formula(`SUM(F2:F${newLastDataRow})`);
@@ -667,6 +670,7 @@ export function deleteTransaction(month, row, year = '2026') {
   ws.cell(`H${newTotalsRow}`).formula(
     `SUM(${tableName}[[#Totals],[Inflow]]-${tableName}[[#Totals],[Outflow]])`
   );
+  applyMoneyStyles(ws, newTotalsRow, true);
 
   // Clear old totals row
   for (let col = 1; col <= 10; col++) {

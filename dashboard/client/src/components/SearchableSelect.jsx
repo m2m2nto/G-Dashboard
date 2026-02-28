@@ -3,8 +3,10 @@ import { useState, useRef, useEffect } from 'react';
 export default function SearchableSelect({ value, options, onSelect, placeholder, className }) {
   const [query, setQuery] = useState(value || '');
   const [isOpen, setIsOpen] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
   const ref = useRef(null);
   const inputRef = useRef(null);
+  const listRef = useRef(null);
 
   useEffect(() => {
     setQuery(value || '');
@@ -24,6 +26,57 @@ export default function SearchableSelect({ value, options, onSelect, placeholder
     !query || opt.toLowerCase().includes(query.toLowerCase())
   );
 
+  // Reset highlight when filtered list changes
+  useEffect(() => {
+    setHighlightIdx(-1);
+  }, [query]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (highlightIdx >= 0 && listRef.current) {
+      const item = listRef.current.children[highlightIdx];
+      if (item) item.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightIdx]);
+
+  const selectItem = (opt) => {
+    setQuery(opt);
+    onSelect(opt);
+    setIsOpen(false);
+    setHighlightIdx(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        setIsOpen(true);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlightIdx((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlightIdx((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlightIdx >= 0 && highlightIdx < filtered.length) {
+          selectItem(filtered[highlightIdx]);
+        }
+        break;
+      case 'Escape':
+        setIsOpen(false);
+        setHighlightIdx(-1);
+        break;
+    }
+  };
+
   return (
     <div className="relative" ref={ref}>
       <div className="relative">
@@ -36,6 +89,7 @@ export default function SearchableSelect({ value, options, onSelect, placeholder
             setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={`${className} pr-7`}
         />
@@ -54,17 +108,18 @@ export default function SearchableSelect({ value, options, onSelect, placeholder
         </button>
       </div>
       {isOpen && filtered.length > 0 && (
-        <ul className="absolute z-20 bg-white rounded-xl mt-1 max-h-48 overflow-y-auto w-full shadow-elevation-2">
-          {filtered.map((opt) => (
+        <ul ref={listRef} className="absolute z-20 bg-white rounded-xl mt-1 max-h-48 overflow-y-auto w-full shadow-elevation-2">
+          {filtered.map((opt, idx) => (
             <li
               key={opt}
-              onMouseDown={() => {
-                setQuery(opt);
-                onSelect(opt);
-                setIsOpen(false);
-              }}
+              onMouseDown={() => selectItem(opt)}
+              onMouseEnter={() => setHighlightIdx(idx)}
               className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
-                opt === value ? 'bg-primary-light text-primary font-medium' : 'hover:bg-surface-dim text-on-surface'
+                idx === highlightIdx
+                  ? 'bg-primary-light text-primary font-medium'
+                  : opt === value
+                    ? 'text-primary font-medium'
+                    : 'hover:bg-surface-dim text-on-surface'
               }`}
             >
               {opt}
