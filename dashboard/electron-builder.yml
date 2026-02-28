@@ -8,6 +8,7 @@ directories:
 files:
   - electron/main.cjs
   - electron/preload.cjs
+  - electron/updater.cjs
   - package.json
 
 # asar must be false — fork() needs real filesystem paths
