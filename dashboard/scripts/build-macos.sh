@@ -17,6 +17,13 @@ echo "=== Building $APP_NAME.app ==="
 echo "Dashboard dir: $DASHBOARD_DIR"
 
 # -------------------------------------------------------------------
+# 0. Read version from package.json
+# -------------------------------------------------------------------
+APP_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.0")
+APP_BUILD=$(node -p "require('./package.json').build || 0" 2>/dev/null || echo "0")
+echo "Version: $APP_VERSION (build $APP_BUILD)"
+
+# -------------------------------------------------------------------
 # 1. Build the client
 # -------------------------------------------------------------------
 echo ""
@@ -62,7 +69,7 @@ cd "$DASHBOARD_DIR"
 # 6. Generate Info.plist
 # -------------------------------------------------------------------
 echo "Generating Info.plist..."
-cat > "$CONTENTS/Info.plist" << 'PLIST'
+cat > "$CONTENTS/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -75,9 +82,9 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
   <key>CFBundleIdentifier</key>
   <string>com.gl-dashboard.app</string>
   <key>CFBundleVersion</key>
-  <string>1.0.0</string>
+  <string>${APP_VERSION}.${APP_BUILD}</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
+  <string>${APP_VERSION}</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleExecutable</key>
@@ -148,7 +155,7 @@ export NODE_ENV="production"
 
 clear
 echo "========================================"
-echo "  GL-Dashboard"
+echo "  GL-Dashboard v${APP_VERSION} (build ${APP_BUILD})"
 echo "========================================"
 echo ""
 echo "  Node:    $NODE_VERSION ($NODE_PATH)"
