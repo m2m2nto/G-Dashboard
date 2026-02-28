@@ -53,7 +53,7 @@ export default function TransactionTable({
         <table className="min-w-full">
           <thead>
             <tr className="border-b border-surface-border bg-surface-dim">
-              {['Date', 'Type', 'Transaction', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Cash Flow', ''].map((h, i) => (
+              {['Date', 'Type', 'Transaction', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Recipient', ''].map((h, i) => (
                 <th key={i} className={`px-3 py-2 text-left text-xs font-medium text-on-surface-secondary ${i === 0 ? 'sticky top-0 left-0 z-20' : 'sticky top-0 z-10'} bg-surface-dim ${i >= 5 && i <= 7 ? 'text-right' : ''}`}>{h}</th>
               ))}
             </tr>
@@ -335,7 +335,7 @@ export default function TransactionTable({
                     {tx.cashFlow || (
                       <span className="inline-flex items-center gap-1 text-amber-600">
                         <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>warning</span>
-                        <span>No category</span>
+                        <span>No recipient</span>
                       </span>
                     )}
                   </td>

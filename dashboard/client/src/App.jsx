@@ -54,15 +54,15 @@ import {
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
 
-const CF_SUB_TABS = [
-  { id: 'grid', label: 'Grid', icon: 'grid_view' },
-  { id: 'categories', label: 'Categories', icon: 'category' },
+const TX_SUB_TABS = [
+  { id: 'list', label: 'Transactions', icon: 'receipt_long' },
+  { id: 'cashflow', label: 'Lux Cash Flow', icon: 'monitoring' },
+  { id: 'categories', label: 'Recipients', icon: 'category' },
   { id: 'mapping', label: 'Mapping', icon: 'link' },
 ];
 
 const BUDGET_SUB_TABS = [
   { id: 'overview', label: 'Overview', icon: 'table_chart' },
-  { id: 'projection', label: 'Projection', icon: 'payments' },
   { id: 'entries', label: 'Entries', icon: 'edit_note' },
 ];
 
@@ -74,7 +74,7 @@ const ANALYTICS_SUB_TABS = [
 export default function App() {
   // ── Navigation state ──
   const [section, setSection] = useState('home');
-  const [cashflowView, setCashflowView] = useState('grid');
+  const [txView, setTxView] = useState('list');
   const [budgetView, setBudgetView] = useState('overview');
   const [entriesInitialMonth, setEntriesInitialMonth] = useState(undefined);
   const [entriesInitialCategory, setEntriesInitialCategory] = useState(undefined);
@@ -159,8 +159,7 @@ export default function App() {
   const disabledSections = useMemo(() => {
     const disabled = new Set();
     if (txYears.length === 0 || !txYears.includes(globalYear)) disabled.add('transactions');
-    if (cfYears.length === 0 || !cfYears.includes(globalYear)) disabled.add('cashflow');
-    if (!budgetYears.includes(globalYear)) disabled.add('budget');
+    if (!budgetYears.includes(globalYear)) { disabled.add('budget'); disabled.add('cf-projection'); }
     if (cfYears.length === 0) disabled.add('analytics');
     return disabled;
   }, [globalYear, txYears, cfYears, budgetYears]);
@@ -259,9 +258,8 @@ export default function App() {
   }, [globalYear, txYears, pushToast]);
 
   useEffect(() => {
-    if (disabledSections.has('cashflow')) return;
-    if (section === 'cashflow') loadCashFlow();
-  }, [section, globalYear, disabledSections, loadCashFlow]);
+    if (section === 'transactions' && txView === 'cashflow') loadCashFlow();
+  }, [section, txView, globalYear, loadCashFlow]);
 
   const loadBudget = useCallback(async () => {
     setBudgetLoading(true);
@@ -276,7 +274,7 @@ export default function App() {
 
   useEffect(() => {
     if (disabledSections.has('budget')) return;
-    if (section === 'budget' || (section === 'analytics' && analyticsView === 'budget')) loadBudget();
+    if (section === 'budget' || section === 'cf-projection' || (section === 'analytics' && analyticsView === 'budget')) loadBudget();
   }, [section, analyticsView, globalYear, disabledSections, loadBudget]);
 
   const loadBudgetEntries = useCallback(async () => {
@@ -293,17 +291,17 @@ export default function App() {
 
   useEffect(() => {
     if (disabledSections.has('budget')) return;
-    if (section === 'budget' && (budgetView === 'overview' || budgetView === 'projection' || budgetView === 'entries')) {
+    if (section === 'budget' || section === 'cf-projection') {
       loadBudgetEntries();
     }
   }, [section, budgetView, globalYear, disabledSections, loadBudgetEntries]);
 
   useEffect(() => {
     if (disabledSections.has('budget')) return;
-    if (section === 'budget' && budgetView === 'projection') {
+    if (section === 'cf-projection') {
       getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null));
     }
-  }, [section, budgetView, globalYear, disabledSections]);
+  }, [section, globalYear, disabledSections]);
 
   const loadElements = useCallback(async () => {
     setElementsLoading(true);
@@ -317,8 +315,8 @@ export default function App() {
   }, [pushToast]);
 
   useEffect(() => {
-    if (section === 'cashflow' && cashflowView === 'categories') loadElements();
-  }, [section, cashflowView, loadElements]);
+    if (section === 'transactions' && txView === 'categories') loadElements();
+  }, [section, txView, loadElements]);
 
   const loadCfBudgetMap = useCallback(async () => {
     setCfBudgetMapLoading(true);
@@ -336,8 +334,8 @@ export default function App() {
   }, [globalYear, pushToast]);
 
   useEffect(() => {
-    if (section === 'cashflow' && cashflowView === 'mapping') loadCfBudgetMap();
-  }, [section, cashflowView, loadCfBudgetMap]);
+    if (section === 'transactions' && txView === 'mapping') loadCfBudgetMap();
+  }, [section, txView, loadCfBudgetMap]);
 
   const loadCharts = useCallback(async () => {
     setChartsLoading(true);
@@ -464,9 +462,13 @@ export default function App() {
     getBudgetYears().then(setBudgetYears).catch(() => {});
     getTransactionYears().then(setTxYears).catch(() => {});
     getBudgetCategories(globalYear).then(setBudgetCategoriesList).catch(() => {});
-    if (section === 'transactions') loadTransactions();
-    if (section === 'cashflow') { loadCashFlow(); if (cashflowView === 'categories') loadElements(); }
+    if (section === 'transactions') {
+      if (txView === 'list') loadTransactions();
+      if (txView === 'cashflow') loadCashFlow();
+      if (txView === 'categories') loadElements();
+    }
     if (section === 'budget') { loadBudget(); loadBudgetEntries(); }
+    if (section === 'cf-projection') { loadBudget(); loadBudgetEntries(); getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null)); }
     if (section === 'analytics') { loadCharts(); if (analyticsView === 'budget') loadBudget(); }
     if (section === 'activity') loadActivity();
   };
@@ -477,13 +479,18 @@ export default function App() {
       setShowSettings(true);
       return;
     }
+    if (target === 'cashflow') {
+      setSection('transactions');
+      setTxView('cashflow');
+      return;
+    }
     setSection(target);
   };
 
   const handleNavigateSection = (sec) => {
     setSection(sec);
     // Reset sub-views to defaults
-    if (sec === 'cashflow') setCashflowView('grid');
+    if (sec === 'transactions') setTxView('list');
     if (sec === 'budget') { setBudgetView('overview'); setEntriesInitialMonth(undefined); setEntriesInitialCategory(undefined); }
     if (sec === 'analytics') setAnalyticsView('cashflow');
   };
@@ -491,10 +498,10 @@ export default function App() {
   // ── Keyboard shortcuts ──
   useEffect(() => {
     const handler = (e) => {
-      // Cmd+1-5 for section navigation
+      // Cmd+1-6 for section navigation
       if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '6') {
         e.preventDefault();
-        const sections = ['home', 'transactions', 'cashflow', 'budget', 'analytics', 'activity'];
+        const sections = ['home', 'transactions', 'cf-projection', 'budget', 'analytics', 'activity'];
         const idx = parseInt(e.key) - 1;
         if (sections[idx]) setSection(sections[idx]);
       }
@@ -518,7 +525,7 @@ export default function App() {
   const normalize = (value) => String(value || '').toLowerCase();
   const txSearch = txQuery.trim().toLowerCase();
   const txFilterDefs = [
-    { id: 'no-category', label: 'No category', predicate: (tx) => !tx.cashFlow },
+    { id: 'no-category', label: 'No recipient', predicate: (tx) => !tx.cashFlow },
     { id: 'has-iban', label: 'Has IBAN', predicate: (tx) => !!tx.iban },
     { id: 'inflow-only', label: 'Inflow only', predicate: (tx) => (tx.inflow || 0) > 0 && !(tx.outflow || 0) },
     { id: 'outflow-only', label: 'Outflow only', predicate: (tx) => (tx.outflow || 0) > 0 && !(tx.inflow || 0) },
@@ -616,7 +623,7 @@ export default function App() {
   }
 
   // ── Determine current sub-view for breadcrumb ──
-  const currentSubView = section === 'cashflow' ? cashflowView : section === 'budget' ? budgetView : section === 'analytics' ? analyticsView : null;
+  const currentSubView = section === 'transactions' ? (txView !== 'list' ? txView : null) : section === 'budget' ? budgetView : section === 'analytics' ? analyticsView : null;
 
   return (
     <>
@@ -691,221 +698,230 @@ export default function App() {
 
         {/* ═══ TRANSACTIONS ═══ */}
         {section === 'transactions' && (
-          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            {/* Toolbar */}
-            <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <MonthSelector selected={month} onChange={setMonth} />
-                <span className="text-sm text-on-surface-secondary">
-                  {!txLoading && (
-                    <>
-                      {txSearch
-                        ? `Showing ${finalTransactions.length} of ${transactions.length}`
-                        : `${transactions.length} transactions`}
-                    </>
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto sm:justify-end">
-                <div className="relative w-full sm:w-56 min-w-[140px]">
-                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
-                  <input
-                    type="search"
-                    value={txQuery}
-                    onChange={(e) => setTxQuery(e.target.value)}
-                    placeholder="Search transactions..."
-                    className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                <button
-                  onClick={async () => {
-                    await compactTransactions(globalYear, month).catch(() => {});
-                    loadTransactions();
-                  }}
-                  className={BUTTON_GHOST}
-                  title="Refresh"
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
-                  Refresh
-                </button>
-                <button
-                  onClick={() => setShowForm((v) => !v)}
-                  className={`${showForm ? BUTTON_NEUTRAL : BUTTON_PRIMARY} shrink-0`}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{showForm ? 'close' : 'add'}</span>
-                  {showForm ? 'Close' : 'New'}
-                </button>
-              </div>
-            </div>
-            {/* Filter chips */}
-            <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
-              {txFilterDefs.map((filter) => {
-                const isActive = txFilters.includes(filter.id);
-                return (
-                  <button
-                    key={filter.id}
-                    onClick={() =>
-                      setTxFilters((prev) =>
-                        isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
-                      )
-                    }
-                    className={`${BUTTON_PILL_BASE} ${
-                      isActive
-                        ? 'bg-primary-light text-primary border-primary/30'
-                        : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-                    }`}
-                  >
-                    {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
-                    {filter.label}
-                  </button>
-                );
-              })}
-              {(txFilters.length > 0 || txQuery) && (
-                <button
-                  onClick={() => { setTxFilters([]); setTxQuery(''); }}
-                  className={BUTTON_GHOST}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
-                  Clear
-                </button>
-              )}
-            </div>
+          <div className="space-y-4">
+            <SubTabBar tabs={TX_SUB_TABS} active={txView} onChange={setTxView} />
 
-            {showForm && (
-              <div className="border-t border-surface-border">
-                <TransactionForm
+            {txView === 'list' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                {/* Toolbar */}
+                <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <MonthSelector selected={month} onChange={setMonth} />
+                    <span className="text-sm text-on-surface-secondary">
+                      {!txLoading && (
+                        <>
+                          {txSearch
+                            ? `Showing ${finalTransactions.length} of ${transactions.length}`
+                            : `${transactions.length} transactions`}
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto sm:justify-end">
+                    <div className="relative w-full sm:w-56 min-w-[140px]">
+                      <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
+                      <input
+                        type="search"
+                        value={txQuery}
+                        onChange={(e) => setTxQuery(e.target.value)}
+                        placeholder="Search transactions..."
+                        className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await compactTransactions(globalYear, month).catch(() => {});
+                        loadTransactions();
+                      }}
+                      className={BUTTON_GHOST}
+                      title="Refresh"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
+                      Refresh
+                    </button>
+                    <button
+                      onClick={() => setShowForm((v) => !v)}
+                      className={`${showForm ? BUTTON_NEUTRAL : BUTTON_PRIMARY} shrink-0`}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{showForm ? 'close' : 'add'}</span>
+                      {showForm ? 'Close' : 'New'}
+                    </button>
+                  </div>
+                </div>
+                {/* Filter chips */}
+                <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
+                  {txFilterDefs.map((filter) => {
+                    const isActive = txFilters.includes(filter.id);
+                    return (
+                      <button
+                        key={filter.id}
+                        onClick={() =>
+                          setTxFilters((prev) =>
+                            isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
+                          )
+                        }
+                        className={`${BUTTON_PILL_BASE} ${
+                          isActive
+                            ? 'bg-primary-light text-primary border-primary/30'
+                            : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+                        }`}
+                      >
+                        {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
+                        {filter.label}
+                      </button>
+                    );
+                  })}
+                  {(txFilters.length > 0 || txQuery) && (
+                    <button
+                      onClick={() => { setTxFilters([]); setTxQuery(''); }}
+                      className={BUTTON_GHOST}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {showForm && (
+                  <div className="border-t border-surface-border">
+                    <TransactionForm
+                      categories={categories}
+                      elements={elements}
+                      categoryHints={categoryHints}
+                      onSubmit={async (data) => {
+                        const ok = await handleAddTransaction(data);
+                        if (ok) setShowForm(false);
+                      }}
+                      submitting={submitting}
+                    />
+                  </div>
+                )}
+
+                <TransactionTable
+                  transactions={finalTransactions}
+                  loading={txLoading}
                   categories={categories}
                   elements={elements}
                   categoryHints={categoryHints}
-                  onSubmit={async (data) => {
-                    const ok = await handleAddTransaction(data);
-                    if (ok) setShowForm(false);
-                  }}
-                  submitting={submitting}
+                  onUpdate={handleUpdateTransaction}
+                  onDelete={handleDeleteTransaction}
+                  onToast={pushToast}
                 />
               </div>
             )}
 
-            <TransactionTable
-              transactions={finalTransactions}
-              loading={txLoading}
-              categories={categories}
-              elements={elements}
-              categoryHints={categoryHints}
-              onUpdate={handleUpdateTransaction}
-              onDelete={handleDeleteTransaction}
-              onToast={pushToast}
-            />
-          </div>
-        )}
-
-        {/* ═══ CASH FLOW ═══ */}
-        {section === 'cashflow' && (
-          <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-            {/* Toolbar */}
-            <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <SubTabBar tabs={CF_SUB_TABS} active={cashflowView} onChange={setCashflowView} />
-                {cashflowView === 'grid' && cfLoading && (
-                  <span className="text-sm text-on-surface-secondary flex items-center gap-2">
-                    <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Syncing...
-                  </span>
-                )}
-                {cashflowView === 'categories' && !elementsLoading && (
-                  <span className="text-sm text-on-surface-secondary">
-                    {elementsSearch
-                      ? `Showing ${finalElements.length} of ${elementsDetail.length}`
-                      : `${elementsDetail.length} elements`}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {cashflowView === 'grid' && cashFlow?.hasYoY && (
-                  <button
-                    onClick={() => setShowYoY((v) => !v)}
-                    className={`${BUTTON_PILL_BASE} shrink-0 ${
-                      showYoY
-                        ? 'bg-primary-light text-primary border-primary/30'
-                        : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-                    }`}
-                  >
-                    {showYoY && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
-                    {showYoY ? 'YoY Comparison' : 'Show YoY'}
-                  </button>
-                )}
-                {cashflowView === 'categories' && (
-                  <div className="relative w-56">
-                    <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
-                    <input
-                      type="search"
-                      value={elementsQuery}
-                      onChange={(e) => setElementsQuery(e.target.value)}
-                      placeholder="Search elements..."
-                      className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
+            {txView === 'cashflow' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {cfLoading && (
+                      <span className="text-sm text-on-surface-secondary flex items-center gap-2">
+                        <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Syncing...
+                      </span>
+                    )}
                   </div>
-                )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {cashFlow?.hasYoY && (
+                      <button
+                        onClick={() => setShowYoY((v) => !v)}
+                        className={`${BUTTON_PILL_BASE} shrink-0 ${
+                          showYoY
+                            ? 'bg-primary-light text-primary border-primary/30'
+                            : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+                        }`}
+                      >
+                        {showYoY && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
+                        {showYoY ? 'YoY Comparison' : 'Show YoY'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <CashFlowGrid data={cashFlow} showYoY={showYoY} year={globalYear} />
               </div>
-            </div>
-            {cashflowView === 'categories' && (
-              <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
-                {elementsFilterDefs.map((filter) => {
-                  const isActive = elementsFilters.includes(filter.id);
-                  return (
+            )}
+
+            {txView === 'categories' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {!elementsLoading && (
+                      <span className="text-sm text-on-surface-secondary">
+                        {elementsSearch
+                          ? `Showing ${finalElements.length} of ${elementsDetail.length}`
+                          : `${elementsDetail.length} elements`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="relative w-56">
+                      <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
+                      <input
+                        type="search"
+                        value={elementsQuery}
+                        onChange={(e) => setElementsQuery(e.target.value)}
+                        placeholder="Search elements..."
+                        className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
+                  {elementsFilterDefs.map((filter) => {
+                    const isActive = elementsFilters.includes(filter.id);
+                    return (
+                      <button
+                        key={filter.id}
+                        onClick={() =>
+                          setElementsFilters((prev) =>
+                            isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
+                          )
+                        }
+                        className={`${BUTTON_PILL_BASE} ${
+                          isActive
+                            ? 'bg-primary-light text-primary border-primary/30'
+                            : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+                        }`}
+                      >
+                        {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
+                        {filter.label}
+                      </button>
+                    );
+                  })}
+                  {(elementsFilters.length > 0 || elementsQuery) && (
                     <button
-                      key={filter.id}
-                      onClick={() =>
-                        setElementsFilters((prev) =>
-                          isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
-                        )
-                      }
-                      className={`${BUTTON_PILL_BASE} ${
-                        isActive
-                          ? 'bg-primary-light text-primary border-primary/30'
-                          : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-                      }`}
+                      onClick={() => { setElementsFilters([]); setElementsQuery(''); }}
+                      className={BUTTON_GHOST}
                     >
-                      {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
-                      {filter.label}
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+                      Clear
                     </button>
-                  );
-                })}
-                {(elementsFilters.length > 0 || elementsQuery) && (
-                  <button
-                    onClick={() => { setElementsFilters([]); setElementsQuery(''); }}
-                    className={BUTTON_GHOST}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
-                    Clear
-                  </button>
-                )}
+                  )}
+                </div>
+                <ElementsTable
+                  elements={finalElements}
+                  loading={elementsLoading}
+                  categories={categories}
+                  onUpdateCategory={handleUpdateElementCategory}
+                  onToast={pushToast}
+                />
               </div>
             )}
-            {cashflowView === 'grid' && (
-              <CashFlowGrid data={cashFlow} showYoY={showYoY} year={globalYear} />
-            )}
-            {cashflowView === 'categories' && (
-              <ElementsTable
-                elements={finalElements}
-                loading={elementsLoading}
-                categories={categories}
-                onUpdateCategory={handleUpdateElementCategory}
-                onToast={pushToast}
-              />
-            )}
-            {cashflowView === 'mapping' && (
-              <CategoryMapping
-                categories={categories}
-                budgetCategories={budgetCategoriesList}
-                cfBudgetMap={cfBudgetMap}
-                loading={cfBudgetMapLoading}
-                onUpdate={handleUpdateCfBudgetMapping}
-                onToast={pushToast}
-              />
+
+            {txView === 'mapping' && (
+              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                <CategoryMapping
+                  categories={categories}
+                  budgetCategories={budgetCategoriesList}
+                  cfBudgetMap={cfBudgetMap}
+                  loading={cfBudgetMapLoading}
+                  onUpdate={handleUpdateCfBudgetMapping}
+                  onToast={pushToast}
+                />
+              </div>
             )}
           </div>
         )}
@@ -947,12 +963,6 @@ export default function App() {
               </div>
             )}
 
-            {budgetView === 'projection' && (
-              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-                <CashFlowProjection entries={budgetEntries} budget={budget} txConsuntivo={txBudgetSummary} />
-              </div>
-            )}
-
             {budgetView === 'entries' && (
               <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
                 <BudgetEntries
@@ -974,6 +984,24 @@ export default function App() {
                 />
               </div>
             )}
+          </div>
+        )}
+
+        {/* ═══ CASH FLOW (CF Projection) ═══ */}
+        {section === 'cf-projection' && (
+          <div className="space-y-4">
+            {(budgetLoading || budgetEntriesLoading) && (
+              <span className="text-sm text-on-surface-secondary flex items-center gap-2">
+                <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Loading...
+              </span>
+            )}
+            <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+              <CashFlowProjection entries={budgetEntries} budget={budget} txConsuntivo={txBudgetSummary} />
+            </div>
           </div>
         )}
 

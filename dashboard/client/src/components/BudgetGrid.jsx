@@ -13,7 +13,7 @@ function fmt(v) {
   return Number(v).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 }
 
-// Diff = consuntivo - possibile. Costs: negative (under budget) = green. Revenues: positive (over forecast) = green.
+// Diff = possibile - consuntivo. Costs: negative (under budget) = green. Revenues: positive (over forecast) = green.
 function diffColor(value, isCost) {
   if (value == null || value === 0) return '';
   const isGood = isCost ? value < 0 : value > 0;
@@ -212,20 +212,6 @@ function AnnualSummary({ data, onConsuntivoClick }) {
         {renderCategoryRows(data.revenues, false, 'rev')}
         {renderTotalRow('TOTALE RICAVI', data.totals.totalRevenues, false)}
 
-        {data.financing?.length > 0 && (<>
-          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
-
-          {/* FINANZIAMENTI */}
-          <tbody>
-            <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>
-                FINANZIAMENTI
-              </td>
-            </tr>
-          </tbody>
-          {renderCategoryRows(data.financing, false, 'fin')}
-        </>)}
-
         <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
         {/* MARGINE */}
@@ -320,7 +306,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
   // Build a lookup: row → scenarioData values
   const scenarioMap = {};
   if (scenarioData) {
-    for (const item of [...scenarioData.costs, ...scenarioData.revenues, ...(scenarioData.financing || [])]) {
+    for (const item of [...scenarioData.costs, ...scenarioData.revenues]) {
       scenarioMap[item.row] = item;
     }
     scenarioMap[BUDGET_TOTAL_COSTS_ROW_FE] = scenarioData.totals.totalCosts;
@@ -363,13 +349,13 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
               <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category)} />
             </td>
           </tr>
-          {/* Δ (diff: consuntivo - budget) */}
+          {/* Δ (diff: possibile - consuntivo) */}
           <tr className="hover:bg-surface-dim/50 transition-colors">
             <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">&Delta;</td>
             {MONTHS.map((m) => {
               const bVal = sRow ? sRow.months[m] : 0;
               const aVal = row.months[m].consuntivo;
-              const d = aVal - bVal;
+              const d = bVal - aVal;
               return (
                 <td key={m} className={`px-2 py-0.5 text-right text-xs tabular-nums ${diffColor(d, isCost)}`}>
                   {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
@@ -380,7 +366,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
               {(() => {
                 const bTotal = sRow ? sRow.total : 0;
                 const aTotal = row.annual.consuntivo;
-                const d = aTotal - bTotal;
+                const d = bTotal - aTotal;
                 return (
                   <span className={diffColor(d, isCost)}>
                     {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
@@ -415,7 +401,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
         <tr className="bg-surface-dim font-semibold">
           <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">&Delta;</td>
           {MONTHS.map((m) => {
-            const d = totalsGen.months[m].consuntivo - (sRow ? sRow.months[m] : 0);
+            const d = (sRow ? sRow.months[m] : 0) - totalsGen.months[m].consuntivo;
             return (
               <td key={m} className={`px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums ${diffColor(d, isCost)}`}>
                 {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
@@ -424,7 +410,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
           })}
           <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">
             {(() => {
-              const d = totalsGen.annual.consuntivo - (sRow ? sRow.total : 0);
+              const d = (sRow ? sRow.total : 0) - totalsGen.annual.consuntivo;
               return <span className={diffColor(d, isCost)}>{d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}</span>;
             })()}
           </td>
@@ -489,17 +475,6 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
           </tbody>
           {renderCategoryRows(data.revenues, false)}
           {renderTotalRows('TOTALE RICAVI', data.totals.totalRevenues, false, BUDGET_TOTAL_REVENUES_ROW_FE)}
-
-          {data.financing?.length > 0 && (<>
-            <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
-
-            <tbody>
-              <tr className="bg-surface-dim">
-                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
-              </tr>
-            </tbody>
-            {renderCategoryRows(data.financing, false)}
-          </>)}
 
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 

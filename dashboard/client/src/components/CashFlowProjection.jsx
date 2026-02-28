@@ -96,10 +96,10 @@ function buildProjection(entries, budget, txConsuntivo) {
         mv[s] = arr ? arr[i] : 0;
         annual[s] += mv[s];
       }
-      mv.diff = mv.consuntivo - mv.possibile;
+      mv.diff = mv.possibile - mv.consuntivo;
       months[m] = mv;
     });
-    annual.diff = annual.consuntivo - annual.possibile;
+    annual.diff = annual.possibile - annual.consuntivo;
 
     const item = { category: info.category, row, months, annual };
     if (info.type === 'cost') costs.push(item);
@@ -120,11 +120,11 @@ function buildProjection(entries, budget, txConsuntivo) {
       for (const r of rows) {
         for (const s of [...SCENARIOS, 'consuntivo']) mv[s] += r.months[m][s];
       }
-      mv.diff = mv.consuntivo - mv.possibile;
+      mv.diff = mv.possibile - mv.consuntivo;
       months[m] = mv;
       for (const s of [...SCENARIOS, 'consuntivo']) annual[s] += mv[s];
     });
-    annual.diff = annual.consuntivo - annual.possibile;
+    annual.diff = annual.possibile - annual.consuntivo;
     return { months, annual };
   };
 
@@ -139,7 +139,7 @@ function buildProjection(entries, budget, txConsuntivo) {
       mv[s] = totalRevenues.months[m][s] - totalCosts.months[m][s];
       marginAnnual[s] += mv[s];
     }
-    mv.diff = mv.consuntivo - mv.possibile;
+    mv.diff = mv.possibile - mv.consuntivo;
     marginMonths[m] = mv;
   });
   marginAnnual.diff = marginAnnual.consuntivo - marginAnnual.possibile;

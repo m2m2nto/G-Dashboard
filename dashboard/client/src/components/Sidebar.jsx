@@ -4,7 +4,7 @@ import logoPng from '../assets/logo.png';
 const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: 'dashboard' },
   { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
-  { id: 'cashflow', label: 'Cash Flow', icon: 'monitoring' },
+  { id: 'cf-projection', label: 'Cash Flow', icon: 'payments' },
   { id: 'budget', label: 'Budget', icon: 'account_balance' },
   { id: 'analytics', label: 'Analytics', icon: 'bar_chart' },
   { id: 'activity', label: 'Activity', icon: 'history' },

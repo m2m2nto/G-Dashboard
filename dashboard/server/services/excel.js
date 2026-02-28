@@ -1625,7 +1625,7 @@ export async function readBudgetGenerale(year) {
         possibile,
         ottimistico,
         consuntivo,
-        diff: consuntivo - possibile,
+        diff: possibile - consuntivo,
       };
     }
     const annual = {};
