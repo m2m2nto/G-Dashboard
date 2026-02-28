@@ -29,3 +29,5 @@ Banking transactions/
 
 # Local app data
 .gl-data/
+
+*.app
