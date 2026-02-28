@@ -415,8 +415,18 @@ export function compactTable(month, year = '2026') {
     const newTotalsRow = writePos;
     const newLastRow = writePos;
 
-    // Write totals at new position
-    for (let col = 1; col <= 10; col++) ws.cell(newTotalsRow, col).value(undefined);
+    // Save totals row styles before overwriting
+    const totalsStyles = {};
+    const styleProps = ['numberFormat', 'fontColor', 'bold', 'italic', 'fontSize', 'fontFamily', 'fill', 'horizontalAlignment', 'verticalAlignment'];
+    for (let col = 1; col <= 10; col++) {
+      totalsStyles[col] = ws.cell(lastRow, col).style(styleProps);
+    }
+
+    // Write totals at new position (with formatting)
+    for (let col = 1; col <= 10; col++) {
+      ws.cell(newTotalsRow, col).value(undefined);
+      ws.cell(newTotalsRow, col).style(totalsStyles[col]);
+    }
     ws.cell(`A${newTotalsRow}`).value('Total');
     ws.cell(`F${newTotalsRow}`).formula(`SUM(F2:F${newLastDataRow})`);
     ws.cell(`G${newTotalsRow}`).formula(`SUM(G2:G${newLastDataRow})`);
@@ -499,13 +509,23 @@ export function addTransaction(month, data, year = '2026') {
   const ws = wb.sheet(month);
   if (!ws) throw new Error(`Sheet "${month}" not found`);
 
-  // Copy totals row label + formulas to the new position
+  // Save totals row styles before overwriting
+  const totalsStyles = {};
+  const styleProps = ['numberFormat', 'fontColor', 'bold', 'italic', 'fontSize', 'fontFamily', 'fill', 'horizontalAlignment', 'verticalAlignment'];
+  for (let col = 1; col <= 10; col++) {
+    totalsStyles[col] = ws.cell(lastRow, col).style(styleProps);
+  }
+
+  // Copy totals row label + formulas to the new position (with formatting)
   ws.cell(`A${newTotalsRow}`).value('Total');
   ws.cell(`F${newTotalsRow}`).formula(`SUM(F2:F${newDataRow})`);
   ws.cell(`G${newTotalsRow}`).formula(`SUM(G2:G${newDataRow})`);
   ws.cell(`H${newTotalsRow}`).formula(
     `SUM(${tableName}[[#Totals],[Inflow]]-${tableName}[[#Totals],[Outflow]])`
   );
+  for (let col = 1; col <= 10; col++) {
+    ws.cell(newTotalsRow, col).style(totalsStyles[col]);
+  }
 
   // Clear old totals row (it becomes a data row)
   for (let col = 1; col <= 10; col++) {
@@ -629,9 +649,17 @@ export function deleteTransaction(month, row, year = '2026') {
   const newTotalsRow = lastDataRow;           // totals moves up one
   const newLastRow = lastRow - 1;
 
-  // Write totals at new position
+  // Save totals row styles before overwriting
+  const totalsStyles = {};
+  const styleProps = ['numberFormat', 'fontColor', 'bold', 'italic', 'fontSize', 'fontFamily', 'fill', 'horizontalAlignment', 'verticalAlignment'];
+  for (let col = 1; col <= 10; col++) {
+    totalsStyles[col] = ws.cell(lastRow, col).style(styleProps);
+  }
+
+  // Write totals at new position (with formatting)
   for (let col = 1; col <= 10; col++) {
     ws.cell(newTotalsRow, col).value(undefined);
+    ws.cell(newTotalsRow, col).style(totalsStyles[col]);
   }
   ws.cell(`A${newTotalsRow}`).value('Total');
   ws.cell(`F${newTotalsRow}`).formula(`SUM(F2:F${newLastDataRow})`);

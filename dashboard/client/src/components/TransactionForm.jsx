@@ -2,6 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { CONTROL_COMPACT, BUTTON_PRIMARY } from '../ui.js';
 
+// Parse EU-formatted number string (e.g. "1.234,56" → 1234.56)
+function parseEU(str) {
+  if (!str) return 0;
+  const s = String(str).trim().replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
 export default function TransactionForm({ categories, elements, categoryHints, onSubmit, submitting }) {
   const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
@@ -67,8 +75,8 @@ export default function TransactionForm({ categories, elements, categoryHints, o
       }
       // Clear mismatched category when flow direction changes
       if ((name === 'inflow' || name === 'outflow') && next.cashFlow) {
-        const isInflow = Number(next.inflow) > 0;
-        const isOutflow = Number(next.outflow) > 0;
+        const isInflow = parseEU(next.inflow) > 0;
+        const isOutflow = parseEU(next.outflow) > 0;
         if ((isInflow && next.cashFlow.startsWith('C-')) || (isOutflow && next.cashFlow.startsWith('R-'))) {
           next.cashFlow = '';
           cashFlowManual.current = false;
@@ -102,7 +110,7 @@ export default function TransactionForm({ categories, elements, categoryHints, o
     }
   };
 
-  const flowDirection = Number(form.inflow) > 0 ? 'inflow' : Number(form.outflow) > 0 ? 'outflow' : null;
+  const flowDirection = parseEU(form.inflow) > 0 ? 'inflow' : parseEU(form.outflow) > 0 ? 'outflow' : null;
   const categoryMismatch = form.cashFlow && flowDirection && (
     (flowDirection === 'inflow' && form.cashFlow.startsWith('C-')) ||
     (flowDirection === 'outflow' && form.cashFlow.startsWith('R-'))
@@ -113,8 +121,8 @@ export default function TransactionForm({ categories, elements, categoryHints, o
     const nextErrors = {};
     if (!form.date) nextErrors.date = 'Date is required.';
     if (!form.transaction) nextErrors.transaction = 'Transaction is required.';
-    if (!form.inflow && !form.outflow) nextErrors.amount = 'Enter an inflow or outflow.';
-    if (Number(form.inflow) > 0 && Number(form.outflow) > 0) nextErrors.amount = 'Only one of inflow or outflow can be provided.';
+    if (!parseEU(form.inflow) && !parseEU(form.outflow)) nextErrors.amount = 'Enter an inflow or outflow.';
+    if (parseEU(form.inflow) > 0 && parseEU(form.outflow) > 0) nextErrors.amount = 'Only one of inflow or outflow can be provided.';
     if (categoryMismatch) {
       nextErrors.cashFlow = flowDirection === 'inflow'
         ? 'Inflow requires a Revenue (R-) category.'
@@ -125,7 +133,11 @@ export default function TransactionForm({ categories, elements, categoryHints, o
       return;
     }
 
-    const ok = await onSubmit(form);
+    const ok = await onSubmit({
+      ...form,
+      inflow: parseEU(form.inflow) || '',
+      outflow: parseEU(form.outflow) || '',
+    });
     if (!ok) return;
     cashFlowManual.current = false;
     setErrors({});
@@ -188,28 +200,26 @@ export default function TransactionForm({ categories, elements, categoryHints, o
         <div>
           <label className="block text-xs font-medium text-on-surface-secondary mb-1">Inflow</label>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
             name="inflow"
             value={form.inflow}
             onChange={handleChange}
-            step="0.01"
-            min="0"
             className={`${inputClass} text-green-700 ${errors.amount ? errorClass : ''}`}
-            placeholder="0.00"
+            placeholder="0,00"
             aria-invalid={!!errors.amount}
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-on-surface-secondary mb-1">Outflow</label>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
             name="outflow"
             value={form.outflow}
             onChange={handleChange}
-            step="0.01"
-            min="0"
             className={`${inputClass} text-red-700 ${errors.amount ? errorClass : ''}`}
-            placeholder="0.00"
+            placeholder="0,00"
             aria-invalid={!!errors.amount}
           />
           {errors.amount && <p className="mt-1 text-xs text-red-600">{errors.amount}</p>}
