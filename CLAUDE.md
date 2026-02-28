@@ -46,6 +46,19 @@ Every time we push to main, follow this sequence **in order** — do NOT push un
 3. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` (from `dashboard/`)
 4. **Replace the .app at the project root**: `rm -rf G-Dashboard.app && cp -R dashboard/dist/electron/mac-arm64/G-Dashboard.app .` — the `rm -rf` is required because `cp -R` merges into an existing directory instead of replacing it, leaving stale timestamps. This is a **local deployment** step so the user can run the latest build directly; it must happen every time
 5. **Commit the buildNumber change and push** — only after the build succeeds and the .app copy is in place
+6. **Upload to GitHub releases** for auto-update distribution:
+   ```bash
+   # Copy and rename the zip for the release
+   cp dashboard/dist/electron/G-Dashboard-{version}-arm64-mac.zip /tmp/G-Dashboard-v{version}-build.{buildNumber}.zip
+   # Create the release on the dedicated releases repo
+   gh release create v{version}-build.{buildNumber} \
+     /tmp/G-Dashboard-v{version}-build.{buildNumber}.zip \
+     --repo m2m2nto/gulliver-dashboard-releases \
+     --title "G-Dashboard {version} (build {buildNumber})" \
+     --notes "G-Dashboard v{version} build {buildNumber}" \
+     --latest
+   ```
+   Replace `{version}` and `{buildNumber}` with actual values from `package.json`. This is **mandatory** — the app checks this repo for updates.
 
 **Important**: The `G-Dashboard.app` at the project root is **NOT tracked by git** — never commit it. It is a local build artifact for the user to run.
 
