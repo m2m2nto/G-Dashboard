@@ -72,6 +72,7 @@ router.get('/budget-categories', async (req, res) => {
     const categories = [
       ...data.costs.map((c) => ({ category: c.category, row: c.row, type: 'cost' })),
       ...data.revenues.map((c) => ({ category: c.category, row: c.row, type: 'revenue' })),
+      ...(data.financing || []).map((c) => ({ category: c.category, row: c.row, type: 'financing' })),
     ];
     res.json(categories);
   } catch (err) {

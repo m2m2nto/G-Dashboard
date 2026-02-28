@@ -83,10 +83,10 @@ export function validateTransactionPayload(body, { partial }) {
     const hasInflow = (cleaned.inflow != null && cleaned.inflow > 0) || (body.inflow != null && Number(body.inflow) > 0);
     const hasOutflow = (cleaned.outflow != null && cleaned.outflow > 0) || (body.outflow != null && Number(body.outflow) > 0);
     if (hasInflow && cleaned.cashFlow.startsWith('C-')) {
-      return { error: 'Inflow transactions must use a Revenue (R-) category, not a Cost (C-) category.' };
+      return { error: 'Inflow transactions must use a Revenue or Financing (R-) category, not a Cost (C-) category.' };
     }
     if (hasOutflow && cleaned.cashFlow.startsWith('R-')) {
-      return { error: 'Outflow transactions must use a Cost (C-) category, not a Revenue (R-) category.' };
+      return { error: 'Outflow transactions must use a Cost (C-) category, not a Revenue/Financing (R-) category.' };
     }
   }
 

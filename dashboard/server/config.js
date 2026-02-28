@@ -229,6 +229,9 @@ export const CATEGORY_TO_CF_ROW = {
   'R-FINANZIAMENTO SOCI': 30,
 };
 
+// Categories that represent shareholder financing (use R- prefix but are not revenue)
+export const CF_FINANCING_CATEGORIES = new Set(['R-FINANZIAMENTO SOCI']);
+
 // Rows that contain formulas (TOTALE rows, MARGINE, SALDO) — never overwrite these
 export const CF_FORMULA_ROWS = [16, 26, 31, 34, 36, 39];
 
@@ -252,6 +255,7 @@ export const CF_BUDGET_SHEET_NAMES = {
 export const BUDGET_NAME_COL = 2;       // Column B — category names
 export const BUDGET_COST_ROWS = { start: 3, end: 14 };
 export const BUDGET_REVENUE_ROWS = { start: 19, end: 23 };
+export const BUDGET_FINANCING_ROWS = { start: 29, end: 30 };
 export const BUDGET_TOTAL_COSTS_ROW = 16;
 export const BUDGET_TOTAL_REVENUES_ROW = 25;
 export const BUDGET_MARGIN_ROW = 27;

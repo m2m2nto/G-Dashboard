@@ -220,15 +220,15 @@ export default function App() {
   }, [needsSetup, initApp]);
 
   // ── Data loaders ──
-  const loadTransactions = useCallback(async () => {
-    setTxLoading(true);
+  const loadTransactions = useCallback(async ({ silent } = {}) => {
+    if (!silent) setTxLoading(true);
     try {
       const data = await getTransactions(globalYear, month);
       setTransactions(data);
     } catch (err) {
       pushToast('error', 'Failed to load transactions: ' + err.message);
     }
-    setTxLoading(false);
+    if (!silent) setTxLoading(false);
   }, [globalYear, month, pushToast]);
 
   useEffect(() => {
@@ -419,12 +419,12 @@ export default function App() {
       await updateElementCategory(data.transaction, data.cashFlow);
       getCategoryHints().then(setCategoryHints).catch(() => {});
     }
-    await loadTransactions();
+    await loadTransactions({ silent: true });
   };
 
   const handleDeleteTransaction = async (row) => {
     await deleteTransaction(globalYear, month, row);
-    await loadTransactions();
+    await loadTransactions({ silent: true });
   };
 
   const handleAddTransaction = async (formData) => {
@@ -433,7 +433,7 @@ export default function App() {
       const result = await addTransaction(globalYear, month, formData);
       if (result.year && result.year !== globalYear) setGlobalYear(result.year);
       if (result.month && result.month !== month) setMonth(result.month);
-      await loadTransactions();
+      await loadTransactions({ silent: true });
       setSubmitting(false);
       return true;
     } catch (err) {

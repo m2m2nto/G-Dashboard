@@ -45,6 +45,7 @@ function buildProjection(entries, budget, txConsuntivo) {
   if (budget) {
     for (const c of budget.costs) categoryMap.set(c.row, { category: c.category, type: 'cost' });
     for (const r of budget.revenues) categoryMap.set(r.row, { category: r.category, type: 'revenue' });
+    for (const f of (budget.financing || [])) categoryMap.set(f.row, { category: f.category, type: 'financing' });
   }
 
   // Aggregate all scenarios
@@ -82,6 +83,7 @@ function buildProjection(entries, budget, txConsuntivo) {
   // Build structured rows
   const costs = [];
   const revenues = [];
+  const financing = [];
 
   for (const [row, info] of categoryMap) {
     const months = {};
@@ -101,11 +103,13 @@ function buildProjection(entries, budget, txConsuntivo) {
 
     const item = { category: info.category, row, months, annual };
     if (info.type === 'cost') costs.push(item);
+    else if (info.type === 'financing') financing.push(item);
     else revenues.push(item);
   }
 
   costs.sort((a, b) => a.row - b.row);
   revenues.sort((a, b) => a.row - b.row);
+  financing.sort((a, b) => a.row - b.row);
 
   // Compute totals
   const buildTotals = (rows) => {
@@ -143,6 +147,7 @@ function buildProjection(entries, budget, txConsuntivo) {
   return {
     costs,
     revenues,
+    financing,
     totals: {
       totalCosts,
       totalRevenues,
@@ -271,6 +276,16 @@ function AnnualSummary({ projection }) {
         </tbody>
         {renderCategoryRows(projection.revenues, false, 'rev')}
         {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues, false)}
+
+        {projection.financing?.length > 0 && (<>
+          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+          <tbody>
+            <tr className="bg-surface-dim">
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+            </tr>
+          </tbody>
+          {renderCategoryRows(projection.financing, false, 'fin')}
+        </>)}
 
         <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
@@ -427,6 +442,16 @@ function MonthlyDetail({ projection }) {
             {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues)}
           </tbody>
 
+          {projection.financing?.length > 0 && (<>
+            <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+            <tbody>
+              <tr className="bg-surface-dim">
+                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+              </tr>
+              {renderCategoryRows(projection.financing)}
+            </tbody>
+          </>)}
+
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
           <tbody>
@@ -450,7 +475,7 @@ export default function CashFlowProjection({ entries, budget, txConsuntivo }) {
     [entries, budget, txConsuntivo],
   );
 
-  const hasData = projection.costs.length > 0 || projection.revenues.length > 0;
+  const hasData = projection.costs.length > 0 || projection.revenues.length > 0 || projection.financing.length > 0;
 
   return (
     <div>

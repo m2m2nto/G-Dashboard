@@ -212,6 +212,20 @@ function AnnualSummary({ data, onConsuntivoClick }) {
         {renderCategoryRows(data.revenues, false, 'rev')}
         {renderTotalRow('TOTALE RICAVI', data.totals.totalRevenues, false)}
 
+        {data.financing?.length > 0 && (<>
+          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+
+          {/* FINANZIAMENTI */}
+          <tbody>
+            <tr className="bg-surface-dim">
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>
+                FINANZIAMENTI
+              </td>
+            </tr>
+          </tbody>
+          {renderCategoryRows(data.financing, false, 'fin')}
+        </>)}
+
         <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
         {/* MARGINE */}
@@ -306,7 +320,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
   // Build a lookup: row → scenarioData values
   const scenarioMap = {};
   if (scenarioData) {
-    for (const item of [...scenarioData.costs, ...scenarioData.revenues]) {
+    for (const item of [...scenarioData.costs, ...scenarioData.revenues, ...(scenarioData.financing || [])]) {
       scenarioMap[item.row] = item;
     }
     scenarioMap[BUDGET_TOTAL_COSTS_ROW_FE] = scenarioData.totals.totalCosts;
@@ -475,6 +489,17 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
           </tbody>
           {renderCategoryRows(data.revenues, false)}
           {renderTotalRows('TOTALE RICAVI', data.totals.totalRevenues, false, BUDGET_TOTAL_REVENUES_ROW_FE)}
+
+          {data.financing?.length > 0 && (<>
+            <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+
+            <tbody>
+              <tr className="bg-surface-dim">
+                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+              </tr>
+            </tbody>
+            {renderCategoryRows(data.financing, false)}
+          </>)}
 
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 

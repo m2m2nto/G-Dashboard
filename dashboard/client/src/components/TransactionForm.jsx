@@ -125,7 +125,7 @@ export default function TransactionForm({ categories, elements, categoryHints, o
     if (parseEU(form.inflow) > 0 && parseEU(form.outflow) > 0) nextErrors.amount = 'Only one of inflow or outflow can be provided.';
     if (categoryMismatch) {
       nextErrors.cashFlow = flowDirection === 'inflow'
-        ? 'Inflow requires a Revenue (R-) category.'
+        ? 'Inflow requires a Revenue or Financing (R-) category.'
         : 'Outflow requires a Cost (C-) category.';
     }
     if (Object.keys(nextErrors).length > 0) {
@@ -247,7 +247,14 @@ export default function TransactionForm({ categories, elements, categoryHints, o
             )}
             {(!flowDirection || flowDirection === 'inflow') && (
               <optgroup label="Revenues">
-                {categories.filter((c) => c.startsWith('R-')).map((c) => (
+                {categories.filter((c) => c.startsWith('R-') && !c.includes('FINANZIAMENTO')).map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </optgroup>
+            )}
+            {(!flowDirection || flowDirection === 'inflow') && (
+              <optgroup label="Financing">
+                {categories.filter((c) => c.startsWith('R-') && c.includes('FINANZIAMENTO')).map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </optgroup>
@@ -256,7 +263,7 @@ export default function TransactionForm({ categories, elements, categoryHints, o
           {(categoryMismatch || errors.cashFlow) && (
             <p className="mt-1 text-xs text-red-600">
               {errors.cashFlow || (flowDirection === 'inflow'
-                ? 'Inflow requires a Revenue (R-) category.'
+                ? 'Inflow requires a Revenue or Financing (R-) category.'
                 : 'Outflow requires a Cost (C-) category.')}
             </p>
           )}

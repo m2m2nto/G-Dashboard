@@ -15,6 +15,7 @@ import {
   BUDGET_NAME_COL,
   BUDGET_COST_ROWS,
   BUDGET_REVENUE_ROWS,
+  BUDGET_FINANCING_ROWS,
   BUDGET_TOTAL_COSTS_ROW,
   BUDGET_TOTAL_REVENUES_ROW,
   BUDGET_MARGIN_ROW,
@@ -1647,6 +1648,19 @@ export async function readBudgetGenerale(year) {
   const costs = readCategoryRows(BUDGET_COST_ROWS);
   const revenues = readCategoryRows(BUDGET_REVENUE_ROWS);
 
+  // Financing category names live in the CF budget sheets, not the generale sheet
+  let financing = [];
+  for (const s of BUDGET_SCENARIOS) {
+    const cfSheet = wb.getWorksheet(CF_BUDGET_SHEET_NAMES[s]);
+    if (!cfSheet) continue;
+    for (let r = BUDGET_FINANCING_ROWS.start; r <= BUDGET_FINANCING_ROWS.end; r++) {
+      const category = cellValue(cfSheet.getRow(r).getCell(BUDGET_NAME_COL)) || '';
+      if (!category) continue;
+      financing.push({ category, row: r, ...readRowGenerale(r) });
+    }
+    if (financing.length > 0) break;
+  }
+
   // Compute totals by summing category rows (formula rows have no cached results)
   const TOTAL_FIELDS = ['certo', 'possibile', 'ottimistico', 'consuntivo', 'diff'];
   function sumRows(rows) {
@@ -1683,6 +1697,7 @@ export async function readBudgetGenerale(year) {
     year: y,
     costs,
     revenues,
+    financing,
     totals: { totalCosts, totalRevenues, margin },
   };
 }
@@ -1748,6 +1763,22 @@ export async function readBudgetScenario(year, scenario, type = 'budget') {
   const costs = readCategoryRows(BUDGET_COST_ROWS);
   const revenues = readCategoryRows(BUDGET_REVENUE_ROWS);
 
+  // Financing category names live in CF budget sheets; for type='cf' ws already is one
+  let financing;
+  if (type === 'cf') {
+    financing = readCategoryRows(BUDGET_FINANCING_ROWS);
+  } else {
+    financing = [];
+    const cfSheet = wb.getWorksheet(CF_BUDGET_SHEET_NAMES[scenario]);
+    if (cfSheet) {
+      for (let r = BUDGET_FINANCING_ROWS.start; r <= BUDGET_FINANCING_ROWS.end; r++) {
+        const category = cellValue(cfSheet.getRow(r).getCell(BUDGET_NAME_COL)) || '';
+        if (!category) continue;
+        financing.push({ category, row: r, ...readRowScenario(r) });
+      }
+    }
+  }
+
   // Compute totals by summing category rows
   function sumScenarioRows(rows) {
     const months = {};
@@ -1772,6 +1803,7 @@ export async function readBudgetScenario(year, scenario, type = 'budget') {
     type,
     costs,
     revenues,
+    financing,
     totals: {
       totalCosts,
       totalRevenues,

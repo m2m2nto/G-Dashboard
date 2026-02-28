@@ -44,11 +44,13 @@ export default function CategoryMapping({ categories, budgetCategories, cfBudget
   }
 
   const costCategories = categories.filter((c) => c.startsWith('C-'));
-  const revenueCategories = categories.filter((c) => c.startsWith('R-'));
-  const allCf = [...costCategories, ...revenueCategories];
+  const revenueCategories = categories.filter((c) => c.startsWith('R-') && !c.includes('FINANZIAMENTO'));
+  const financingCategories = categories.filter((c) => c.startsWith('R-') && c.includes('FINANZIAMENTO'));
+  const allCf = [...costCategories, ...revenueCategories, ...financingCategories];
 
   const costBudget = (budgetCategories || []).filter((b) => b.type === 'cost');
   const revenueBudget = (budgetCategories || []).filter((b) => b.type === 'revenue');
+  const financingBudget = (budgetCategories || []).filter((b) => b.type === 'financing');
 
   const mappedCount = allCf.filter((c) => cfBudgetMap?.[c]?.budgetCategory).length;
 
@@ -86,8 +88,9 @@ export default function CategoryMapping({ categories, budgetCategories, cfBudget
         <tbody>
           {allCf.map((cfCat) => {
             const isCost = cfCat.startsWith('C-');
+            const isFinancing = cfCat.startsWith('R-') && cfCat.includes('FINANZIAMENTO');
             const mapped = cfBudgetMap?.[cfCat];
-            const options = isCost ? costBudget : revenueBudget;
+            const options = isCost ? costBudget : isFinancing ? financingBudget : revenueBudget;
             const isSaving = saving === cfCat;
 
             return (
@@ -97,9 +100,11 @@ export default function CategoryMapping({ categories, budgetCategories, cfBudget
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
                     isCost
                       ? 'bg-status-negative/10 text-status-negative'
-                      : 'bg-status-positive/10 text-status-positive'
+                      : isFinancing
+                        ? 'bg-primary/10 text-primary'
+                        : 'bg-status-positive/10 text-status-positive'
                   }`}>
-                    {isCost ? 'Cost' : 'Rev'}
+                    {isCost ? 'Cost' : isFinancing ? 'Fin' : 'Rev'}
                   </span>
                 </td>
                 <td className="px-3 py-2">

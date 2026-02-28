@@ -57,6 +57,7 @@ test('rejects outflow with Revenue (R-) category', () => {
 
   assert.ok(error);
   assert.match(error, /Outflow.*Cost/i);
+  assert.match(error, /Revenue\/Financing/i);
 });
 
 test('rejects inflow with Cost (C-) category', () => {
@@ -71,7 +72,7 @@ test('rejects inflow with Cost (C-) category', () => {
   );
 
   assert.ok(error);
-  assert.match(error, /Inflow.*Revenue/i);
+  assert.match(error, /Inflow.*Revenue or Financing/i);
 });
 
 test('accepts outflow with Cost (C-) category', () => {
@@ -102,6 +103,21 @@ test('accepts inflow with Revenue (R-) category', () => {
 
   assert.ifError(error);
   assert.equal(cleaned.cashFlow, 'R-ALTRO');
+});
+
+test('accepts inflow with Financing (R-FINANZIAMENTO SOCI) category', () => {
+  const { cleaned, error } = validateTransactionPayload(
+    {
+      date: '2026-01-01',
+      transaction: 'Shareholder loan',
+      inflow: 5000,
+      cashFlow: 'R-FINANZIAMENTO SOCI',
+    },
+    { partial: false }
+  );
+
+  assert.ifError(error);
+  assert.equal(cleaned.cashFlow, 'R-FINANZIAMENTO SOCI');
 });
 
 test('allows category without flow in partial update', () => {
