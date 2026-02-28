@@ -142,7 +142,7 @@ export default function WelcomeSetup({ onComplete }) {
     ? Object.keys(proposal.transactionFiles).sort()
     : [];
 
-  const canCreate = proposal?.cashFlowFile && txYears.length > 0;
+  const canCreate = proposal?.cashFlowFile || txYears.length > 0 || proposal?.budgetFile;
 
   // --- Render ---
 
@@ -210,12 +210,12 @@ export default function WelcomeSetup({ onComplete }) {
                 )
               ) : (
                 <span className="ml-auto">
-                  <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
+                  <span className="material-symbols-outlined text-on-surface-tertiary" style={{ fontSize: '16px' }}>remove_circle_outline</span>
                 </span>
               )}
             </div>
             <div className="text-xs text-on-surface-tertiary truncate" title={proposal?.cashFlowFile}>
-              {proposal?.cashFlowFile || 'Not found'}
+              {proposal?.cashFlowFile || 'Not detected — section will be disabled'}
             </div>
             {proposal?.cashFlowProblems?.length > 0 && (
               <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
@@ -238,7 +238,7 @@ export default function WelcomeSetup({ onComplete }) {
                 <span className="ml-auto text-xs text-on-surface-tertiary">{txYears.length} file{txYears.length !== 1 ? 's' : ''}</span>
               ) : (
                 <span className="ml-auto">
-                  <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
+                  <span className="material-symbols-outlined text-on-surface-tertiary" style={{ fontSize: '16px' }}>remove_circle_outline</span>
                 </span>
               )}
             </div>
@@ -271,7 +271,7 @@ export default function WelcomeSetup({ onComplete }) {
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-on-surface-tertiary">No transaction files found</div>
+              <div className="text-xs text-on-surface-tertiary">Not detected — section will be disabled</div>
             )}
           </div>
 

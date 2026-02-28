@@ -148,12 +148,20 @@ export default function App() {
     return [...set].sort((a, b) => b - a).map(String);
   }, [txYears, cfYears, budgetYears]);
 
+  // ── Auto-select year when current globalYear isn't available ──
+  useEffect(() => {
+    if (allYears.length > 0 && !allYears.includes(globalYear)) {
+      setGlobalYear(allYears[0]); // allYears sorted descending — pick latest
+    }
+  }, [allYears, globalYear]);
+
   // ── Computed: sections disabled for the selected year ──
   const disabledSections = useMemo(() => {
     const disabled = new Set();
-    if (txYears.length > 0 && !txYears.includes(globalYear)) disabled.add('transactions');
-    if (cfYears.length > 0 && !cfYears.includes(globalYear)) disabled.add('cashflow');
+    if (txYears.length === 0 || !txYears.includes(globalYear)) disabled.add('transactions');
+    if (cfYears.length === 0 || !cfYears.includes(globalYear)) disabled.add('cashflow');
     if (!budgetYears.includes(globalYear)) disabled.add('budget');
+    if (cfYears.length === 0) disabled.add('analytics');
     return disabled;
   }, [globalYear, txYears, cfYears, budgetYears]);
 
@@ -182,16 +190,7 @@ export default function App() {
   useEffect(() => {
     getSettings()
       .then((s) => {
-        if (!s.hasProject) {
-          setNeedsSetup(true);
-        } else {
-          const fs = s.fileStatus;
-          if (!fs || (!fs.bankingFile && !fs.cashFlowFile)) {
-            setNeedsSetup(true);
-          } else {
-            setNeedsSetup(false);
-          }
-        }
+        setNeedsSetup(!s.hasProject);
       })
       .catch(() => setNeedsSetup(false));
   }, []);
@@ -204,12 +203,12 @@ export default function App() {
   }, []);
 
   const initApp = useCallback(() => {
-    getCategories().then(setCategories).catch((e) => pushToast('error', 'Failed to load categories: ' + e.message));
-    getElements().then(setElements).catch((e) => pushToast('error', 'Failed to load elements: ' + e.message));
+    getCategories().then(setCategories).catch(() => {});
+    getElements().then(setElements).catch(() => {});
     getCategoryHints().then(setCategoryHints).catch(() => {});
-    getCashFlowYears().then(setCfYears).catch((e) => pushToast('error', 'Failed to load years: ' + e.message));
+    getCashFlowYears().then(setCfYears).catch(() => {});
     getBudgetYears().then(setBudgetYears).catch(() => {});
-    getTransactionYears().then(setTxYears).catch((e) => pushToast('error', 'Failed to load transaction years: ' + e.message));
+    getTransactionYears().then(setTxYears).catch(() => {});
     getBudgetCategories(globalYear).then(setBudgetCategoriesList).catch(() => {});
     loadUsers();
     // Load activity for badge count
@@ -246,14 +245,18 @@ export default function App() {
   const loadCashFlow = useCallback(async () => {
     setCfLoading(true);
     try {
-      await syncAll(globalYear, { silent: true });
+      // Only sync when there are transaction files — syncing zeros out CF data rows
+      // and rewrites from transactions, so skip it to preserve existing CF data
+      if (txYears.length > 0) {
+        await syncAll(globalYear, { silent: true });
+      }
       const data = await getCashFlow(globalYear);
       setCashFlow(data);
     } catch (err) {
       pushToast('error', 'Failed to load cash flow: ' + err.message);
     }
     setCfLoading(false);
-  }, [globalYear, pushToast]);
+  }, [globalYear, txYears, pushToast]);
 
   useEffect(() => {
     if (disabledSections.has('cashflow')) return;
@@ -349,8 +352,9 @@ export default function App() {
   }, [pushToast]);
 
   useEffect(() => {
+    if (disabledSections.has('analytics')) return;
     if (section === 'analytics') loadCharts();
-  }, [section, loadCharts]);
+  }, [section, disabledSections, loadCharts]);
 
   const loadActivity = useCallback(async () => {
     setActivityLoading(true);

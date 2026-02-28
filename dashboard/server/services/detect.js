@@ -63,6 +63,24 @@ export async function readCellsFromZip(zip, sheetMap, sheetName, cellRefs) {
   const sheetFile = zip.file(`xl/${target}`);
   if (!sheetFile) return {};
 
+  // Load shared strings table (cells with t="s" store an index into this)
+  let sharedStrings = null;
+  const ssFile = zip.file('xl/sharedStrings.xml');
+  if (ssFile) {
+    const ssXml = await ssFile.async('string');
+    sharedStrings = [];
+    const siRegex = /<si>([\s\S]*?)<\/si>/g;
+    let siMatch;
+    while ((siMatch = siRegex.exec(ssXml)) !== null) {
+      // Concatenate all <t> values within this <si> (handles rich text with multiple <r><t> runs)
+      const tRegex = /<t[^>]*>([^<]*)<\/t>/g;
+      let tMatch;
+      let text = '';
+      while ((tMatch = tRegex.exec(siMatch[1])) !== null) text += tMatch[1];
+      sharedStrings.push(text);
+    }
+  }
+
   const xml = await sheetFile.async('string');
   const result = {};
   const wanted = new Set(cellRefs);
@@ -70,12 +88,20 @@ export async function readCellsFromZip(zip, sheetMap, sheetName, cellRefs) {
   // Two-step approach: first match each cell (self-closing or with content up to </c>),
   // then extract <v> from its body. This prevents crossing </c> boundaries when
   // a cell has <f> but no <v> (formula-only cells).
-  const cellRegex = /<c\s+r="([A-Z]+\d+)"[^/>]*(?:\/>|>((?:(?!<\/c>)[\s\S])*)<\/c>)/g;
+  const cellRegex = /<c\s+r="([A-Z]+\d+)"([^/>]*)(?:\/>|>((?:(?!<\/c>)[\s\S])*)<\/c>)/g;
   let cm;
   while ((cm = cellRegex.exec(xml)) !== null) {
-    if (wanted.has(cm[1]) && cm[2] != null) {
-      const vMatch = cm[2].match(/<v>([^<]*)<\/v>/);
-      if (vMatch) result[cm[1]] = vMatch[1];
+    if (wanted.has(cm[1]) && cm[3] != null) {
+      const vMatch = cm[3].match(/<v>([^<]*)<\/v>/);
+      if (vMatch) {
+        let value = vMatch[1];
+        // Resolve shared string references (t="s" on the cell tag)
+        if (sharedStrings && /\bt="s"/.test(cm[2])) {
+          const idx = parseInt(value, 10);
+          if (idx >= 0 && idx < sharedStrings.length) value = sharedStrings[idx];
+        }
+        result[cm[1]] = value;
+      }
     }
   }
   return result;
@@ -109,19 +135,27 @@ export async function validateFileStructure(filePath, type, sheetNames) {
       problems.push('No month sheets found to validate');
       return problems;
     }
-    const cells = await readCellsFromZip(zip, sheetMap, firstMonth, ['A3', 'C3']);
-    if (!cells.A3) {
-      problems.push(`Sheet "${firstMonth}" row 3 is empty — expected transaction data starting at row 3`);
-    } else {
-      // Check if A3 looks like a date (serial number or date string)
-      const v = parseFloat(cells.A3);
-      const looksLikeDate = (v > 30000 && v < 100000) || /\d{2}\/\d{2}\/\d{4}/.test(cells.A3) || /^\d{4}-\d{2}-\d{2}/.test(cells.A3);
-      if (!looksLikeDate) {
-        problems.push(`Sheet "${firstMonth}" column A does not contain dates — expected DD/MM/YYYY format`);
-      }
+    // Data may start at row 2 (older files) or row 3 (newer files).
+    // Check both and accept the file if either row looks like valid transaction data.
+    const cells = await readCellsFromZip(zip, sheetMap, firstMonth, ['A2', 'C2', 'A3', 'C3']);
+
+    function looksLikeDateValue(val) {
+      if (!val) return false;
+      const v = parseFloat(val);
+      return (v > 30000 && v < 100000) || /\d{2}\/\d{2}\/\d{4}/.test(val) || /^\d{4}-\d{2}-\d{2}/.test(val);
     }
-    if (!cells.C3) {
-      problems.push(`Sheet "${firstMonth}" row 3 column C is empty — expected a transaction description`);
+
+    const row2Valid = looksLikeDateValue(cells.A2) && cells.C2;
+    const row3Valid = looksLikeDateValue(cells.A3) && cells.C3;
+
+    if (!row2Valid && !row3Valid) {
+      if (!cells.A2 && !cells.A3) {
+        problems.push(`Sheet "${firstMonth}" rows 2-3 are empty — expected transaction data`);
+      } else if (!looksLikeDateValue(cells.A2) && !looksLikeDateValue(cells.A3)) {
+        problems.push(`Sheet "${firstMonth}" column A does not contain dates — expected DD/MM/YYYY format`);
+      } else {
+        problems.push(`Sheet "${firstMonth}" column C is empty — expected a transaction description`);
+      }
     }
   }
 

@@ -9,9 +9,34 @@ import { validateFileStructure } from '../services/detect.js';
 /**
  * Build a synthetic .xlsx buffer with given sheets and cell data.
  * sheets: [{ name, cells: { 'A3': '46023', 'C3': 'Test' } }]
+ *
+ * Cell values:
+ * - string/number: inline value → <c r="..."><v>val</v></c>
+ * - string starting with '=': formula-only → <c r="..."><f>...</f></c>
+ * - { ss: "text" }: shared string → <c r="..." t="s"><v>index</v></c>
+ *   The actual text is stored in xl/sharedStrings.xml and the cell holds the index.
  */
 async function buildXlsx(sheets) {
   const zip = new JSZip();
+
+  // Collect all shared strings across all sheets
+  const sharedStrings = [];
+  const ssIndex = new Map(); // text → index
+  function getSSIndex(text) {
+    if (ssIndex.has(text)) return ssIndex.get(text);
+    const idx = sharedStrings.length;
+    sharedStrings.push(text);
+    ssIndex.set(text, idx);
+    return idx;
+  }
+
+  // Pre-scan all cells for shared strings
+  for (const { cells } of sheets) {
+    if (!cells) continue;
+    for (const val of Object.values(cells)) {
+      if (val && typeof val === 'object' && val.ss != null) getSSIndex(val.ss);
+    }
+  }
 
   const sheetsXml = sheets
     .map(({ name }, i) => `<sheet name="${name}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
@@ -38,6 +63,18 @@ async function buildXlsx(sheets) {
     </Relationships>`
   );
 
+  // Write shared strings file if any exist
+  if (sharedStrings.length > 0) {
+    const siEntries = sharedStrings.map((t) => `<si><t>${t}</t></si>`).join('');
+    zip.file(
+      'xl/sharedStrings.xml',
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">
+        ${siEntries}
+      </sst>`
+    );
+  }
+
   for (let i = 0; i < sheets.length; i++) {
     const { cells } = sheets[i];
     let rowsXml = '';
@@ -55,6 +92,9 @@ async function buildXlsx(sheets) {
             // Values starting with '=' are formula-only cells (no <v>)
             if (typeof val === 'string' && val.startsWith('='))
               return `<c r="${ref}"><f>${val.slice(1)}</f></c>`;
+            // Shared string reference
+            if (val && typeof val === 'object' && val.ss != null)
+              return `<c r="${ref}" t="s"><v>${getSSIndex(val.ss)}</v></c>`;
             return `<c r="${ref}"><v>${val}</v></c>`;
           })
           .join('');
@@ -96,18 +136,18 @@ test('transaction file: valid structure returns no problems', async () => {
   assert.deepEqual(problems, []);
 });
 
-test('transaction file: empty row 3 reports problem', async () => {
+test('transaction file: empty rows 2-3 reports problem', async () => {
   const buf = await buildXlsx([
     { name: 'GEN', cells: {} },
   ]);
   const path = await writeTempXlsx(buf);
   const problems = await validateFileStructure(path, 'transactions', ['GEN']);
-  assert.ok(problems.some((p) => p.includes('row 3 is empty')));
+  assert.ok(problems.some((p) => p.includes('rows 2-3 are empty')));
 });
 
 test('transaction file: non-date in column A reports problem', async () => {
   const buf = await buildXlsx([
-    { name: 'GEN', cells: { A3: 'hello', C3: 'Test' } },
+    { name: 'GEN', cells: { A2: 'hello', C2: 'Test', A3: 'world', C3: 'Test2' } },
   ]);
   const path = await writeTempXlsx(buf);
   const problems = await validateFileStructure(path, 'transactions', ['GEN']);
@@ -123,12 +163,35 @@ test('transaction file: missing column C reports problem', async () => {
   assert.ok(problems.some((p) => p.includes('column C is empty')));
 });
 
+test('transaction file: data starting at row 2 accepted', async () => {
+  // Older files have data starting at row 2 (row 3 is totals)
+  const buf = await buildXlsx([
+    { name: 'GEN', cells: { A2: '44566', C2: 'Capitale sociale', A3: { ss: 'Totale' } } },
+    { name: 'FEB', cells: {} },
+  ]);
+  const path = await writeTempXlsx(buf);
+  const problems = await validateFileStructure(path, 'transactions', ['GEN', 'FEB']);
+  assert.deepEqual(problems, []);
+});
+
 test('transaction file: date string format accepted', async () => {
   const buf = await buildXlsx([
     { name: 'GEN', cells: { A3: '15/01/2026', C3: 'Test' } },
   ]);
   const path = await writeTempXlsx(buf);
   const problems = await validateFileStructure(path, 'transactions', ['GEN']);
+  assert.deepEqual(problems, []);
+});
+
+test('transaction file: shared string date resolved correctly', async () => {
+  // Regression: cells with t="s" store an index into xl/sharedStrings.xml,
+  // not the actual value. readCellsFromZip must resolve the index.
+  const buf = await buildXlsx([
+    { name: 'GEN', cells: { A3: { ss: '02/01/2026' }, C3: { ss: 'Pagamento fornitore' } } },
+    { name: 'FEB', cells: {} },
+  ]);
+  const path = await writeTempXlsx(buf);
+  const problems = await validateFileStructure(path, 'transactions', ['GEN', 'FEB']);
   assert.deepEqual(problems, []);
 });
 

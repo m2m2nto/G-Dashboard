@@ -206,8 +206,7 @@ router.post('/create-project', (req, res) => {
   try {
     // v2 format: transactionFiles map provided
     if (transactionFiles && typeof transactionFiles === 'object') {
-      if (!cashFlowFile) return res.status(400).json({ error: 'cashFlowFile is required' });
-      createProjectV2(dir, { cashFlowFile, transactionFiles });
+      createProjectV2(dir, { cashFlowFile: cashFlowFile || null, transactionFiles });
     } else {
       // Legacy v1 format (auto-migrates to v2)
       if (!bankingFile) return res.status(400).json({ error: 'bankingFile is required' });

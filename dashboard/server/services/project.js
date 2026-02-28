@@ -186,9 +186,12 @@ export function createProjectV2(dir, { cashFlowFile, transactionFiles }) {
 
   _projectDir = dir;
   const manifest = {
-    cashFlowFile: toManifestPath(cashFlowFile),
     transactionFiles: {},
   };
+
+  if (cashFlowFile) {
+    manifest.cashFlowFile = toManifestPath(cashFlowFile);
+  }
 
   for (const [year, filePath] of Object.entries(transactionFiles)) {
     manifest.transactionFiles[year] = toManifestPath(filePath);
