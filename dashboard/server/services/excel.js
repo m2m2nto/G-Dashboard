@@ -41,20 +41,23 @@ function withLock(filePath, fn) {
 }
 
 // ---------------------------------------------------------------------------
-// Money-column styling helper (xlsx-populate)
+// Row styling helper (xlsx-populate)
 // ---------------------------------------------------------------------------
-// Inflow (F=6) green, Outflow (G=7) red, Balance (H=8) blue — EUR accounting
-const DATA_COL_STYLES = {
-  6: { fontColor: '00B050' },   // F = Inflow green
-  7: { fontColor: 'FF0000' },   // G = Outflow red
-  8: { fontColor: '0070C0' },   // H = Balance blue
+// B=2 centered, E=5 left, F=6 green, G=7 red, H=8 blue — EUR accounting
+const COL_STYLES = {
+  2: { horizontalAlignment: 'center' },             // B = Type
+  5: { horizontalAlignment: 'left' },               // E = IBAN
+  6: { fontColor: '00B050', numberFormat: true },    // F = Inflow green
+  7: { fontColor: 'FF0000', numberFormat: true },    // G = Outflow red
+  8: { fontColor: '0070C0', numberFormat: true },    // H = Balance blue
 };
 
-function applyMoneyStyles(ws, row, isTotals) {
-  for (const [col, cfg] of Object.entries(DATA_COL_STYLES)) {
+function applyRowStyles(ws, row, isTotals) {
+  for (const [col, cfg] of Object.entries(COL_STYLES)) {
     const c = Number(col);
-    ws.cell(row, c).style('fontColor', cfg.fontColor);
-    ws.cell(row, c).style('numberFormat', '_(* #,##0.00_)');
+    if (cfg.horizontalAlignment) ws.cell(row, c).style('horizontalAlignment', cfg.horizontalAlignment);
+    if (cfg.fontColor) ws.cell(row, c).style('fontColor', cfg.fontColor);
+    if (cfg.numberFormat) ws.cell(row, c).style('numberFormat', '_(* #,##0.00_)');
     if (isTotals) ws.cell(row, c).style('bold', true);
   }
 }
@@ -444,7 +447,7 @@ export function compactTable(month, year = '2026') {
     ws.cell(`H${newTotalsRow}`).formula(
       `SUM(${tableName}[[#Totals],[Inflow]]-${tableName}[[#Totals],[Outflow]])`
     );
-    applyMoneyStyles(ws, newTotalsRow, true);
+    applyRowStyles(ws, newTotalsRow, true);
 
     // Clear old rows below new totals
     for (let r = newTotalsRow + 1; r <= lastRow; r++) {
@@ -528,7 +531,7 @@ export function addTransaction(month, data, year = '2026') {
   ws.cell(`H${newTotalsRow}`).formula(
     `SUM(${tableName}[[#Totals],[Inflow]]-${tableName}[[#Totals],[Outflow]])`
   );
-  applyMoneyStyles(ws, newTotalsRow, true);
+  applyRowStyles(ws, newTotalsRow, true);
 
   // Clear old totals row (it becomes a data row)
   for (let col = 1; col <= 10; col++) {
@@ -551,7 +554,7 @@ export function addTransaction(month, data, year = '2026') {
   if (data.comments) ws.cell(`J${newDataRow}`).value(data.comments);
 
   // Apply money column styles (font colors + accounting number format)
-  applyMoneyStyles(ws, newDataRow, false);
+  applyRowStyles(ws, newDataRow, false);
 
   await wb.toFileAsync(filePath);
 
@@ -607,7 +610,7 @@ export function updateTransaction(month, row, data, year = '2026') {
     ws.cell(`G${row}`).value(data.outflow ? Number(data.outflow) : undefined);
   }
   // Apply money column styles (font colors + accounting number format)
-  applyMoneyStyles(ws, row, false);
+  applyRowStyles(ws, row, false);
   if (data.cashFlow !== undefined) ws.cell(`I${row}`).value(data.cashFlow || undefined);
   if (data.comments !== undefined) ws.cell(`J${row}`).value(data.comments || undefined);
 
@@ -670,7 +673,7 @@ export function deleteTransaction(month, row, year = '2026') {
   ws.cell(`H${newTotalsRow}`).formula(
     `SUM(${tableName}[[#Totals],[Inflow]]-${tableName}[[#Totals],[Outflow]])`
   );
-  applyMoneyStyles(ws, newTotalsRow, true);
+  applyRowStyles(ws, newTotalsRow, true);
 
   // Clear old totals row
   for (let col = 1; col <= 10; col++) {
