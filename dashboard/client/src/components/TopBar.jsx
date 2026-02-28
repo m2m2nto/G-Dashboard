@@ -36,13 +36,14 @@ export default function TopBar({
   currentUser,
   onSwitchUser,
   onAddUser,
+  isElectron,
 }) {
   const sectionLabel = SECTION_LABELS[section] || section;
   const subLabel = SUB_VIEW_LABELS[subView];
   const showBreadcrumb = subLabel && (section === 'budget' || section === 'cashflow' || section === 'analytics');
 
   return (
-    <header className="h-14 bg-white border-b border-surface-border sticky top-0 z-20 flex items-center px-4 gap-3">
+    <header className={`h-14 bg-white border-b border-surface-border sticky ${isElectron ? 'top-[38px]' : 'top-0'} z-20 flex items-center px-4 gap-3`}>
       {/* Hamburger toggle */}
       <button
         onClick={onToggleSidebar}

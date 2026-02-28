@@ -10,10 +10,10 @@ const NAV_ITEMS = [
   { id: 'activity', label: 'Activity', icon: 'history' },
 ];
 
-export default function Sidebar({ section, onNavigate, collapsed, onToggle }) {
+export default function Sidebar({ section, onNavigate, collapsed, onToggle, isElectron }) {
   return (
     <aside
-      className={`fixed left-0 top-0 bottom-0 z-30 bg-white border-r border-surface-border flex flex-col sidebar-transition ${
+      className={`fixed left-0 ${isElectron ? 'top-[38px]' : 'top-0'} bottom-0 z-30 bg-white border-r border-surface-border flex flex-col sidebar-transition ${
         collapsed ? 'w-[56px]' : 'w-[200px]'
       }`}
     >

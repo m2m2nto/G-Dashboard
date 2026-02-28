@@ -99,6 +99,7 @@ function createWindow(port) {
     width: 1400,
     height: 900,
     titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 13 },
     title: 'G-Dashboard',
     webPreferences: {
       nodeIntegration: false,
