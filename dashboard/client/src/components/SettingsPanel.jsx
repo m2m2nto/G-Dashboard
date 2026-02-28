@@ -412,6 +412,10 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
             </button>
           </div>
         </div>
+
+        <div className="text-center pt-3 mt-3 border-t border-surface-border">
+          <span className="text-[11px] text-on-surface-tertiary">GL-Dashboard v{__APP_VERSION__}</span>
+        </div>
       </div>
 
       {picker === 'banking' && (
