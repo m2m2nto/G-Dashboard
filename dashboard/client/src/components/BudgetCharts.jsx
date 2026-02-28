@@ -107,7 +107,7 @@ function getTotalsKey(metric) {
   return 'margin';
 }
 
-export default function BudgetCharts({ data }) {
+export default function BudgetCharts({ data, year }) {
   const [barMetric, setBarMetric] = useState('costs');
   const [trendMetric, setTrendMetric] = useState('costs');
   const [trendScenario, setTrendScenario] = useState('possibile');
@@ -162,7 +162,7 @@ export default function BudgetCharts({ data }) {
       <div className="bg-white rounded-2xl shadow-elevation-1 p-6">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h2 className="text-base font-semibold text-on-surface">
-            Budget vs Consuntivo per Mese
+            Budget vs Consuntivo per Mese{year ? ` ${year}` : ''}
           </h2>
           <MetricPicker metric={barMetric} setMetric={setBarMetric} metrics={BAR_METRICS} />
         </div>
@@ -193,7 +193,7 @@ export default function BudgetCharts({ data }) {
       <div className="bg-white rounded-2xl shadow-elevation-1 p-6">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h2 className="text-base font-semibold text-on-surface">
-            Trend: Budget vs Consuntivo
+            Trend: Budget vs Consuntivo{year ? ` ${year}` : ''}
           </h2>
           <div className="flex items-center gap-4 flex-wrap">
             <ScenarioPicker scenario={trendScenario} setScenario={setTrendScenario} />

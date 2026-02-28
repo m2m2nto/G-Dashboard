@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { existsSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { resolve, dirname } from 'path';
-import { homedir } from 'os';
+import { homedir, platform } from 'os';
+import { execFile } from 'child_process';
 import { getFilePaths, setFilePaths, getDefaultFilePaths, hasProject } from '../config.js';
 import {
   getProjectDir,
@@ -279,6 +280,70 @@ router.post('/reset', (req, res) => {
     hasProject: false,
     projectDir: null,
   });
+});
+
+// --- Native file dialogs (macOS osascript) ---
+
+function runOsascript(script) {
+  return new Promise((resolve, reject) => {
+    execFile('osascript', ['-e', script], (err, stdout) => {
+      if (err) return reject(err);
+      resolve(stdout.trim());
+    });
+  });
+}
+
+router.post('/native-select-file', async (req, res) => {
+  if (platform() !== 'darwin') return res.status(400).json({ error: 'Native dialogs only supported on macOS' });
+  const { title, defaultPath } = req.body;
+  const startDir = defaultPath && existsSync(defaultPath) ? dirname(defaultPath) : (hasProject() ? getProjectDir() : homedir());
+  const titleStr = title || 'Select File';
+  const script = `set f to POSIX path of (choose file with prompt "${titleStr}" of type {"org.openxmlformats.spreadsheetml.sheet", "xlsx"} default location POSIX file "${startDir}")
+return f`;
+  try {
+    const result = await runOsascript(script);
+    res.json({ path: result || null });
+  } catch {
+    // User cancelled the dialog
+    res.json({ path: null });
+  }
+});
+
+router.post('/native-select-files', async (req, res) => {
+  if (platform() !== 'darwin') return res.status(400).json({ error: 'Native dialogs only supported on macOS' });
+  const { title, defaultPath } = req.body;
+  const startDir = defaultPath && existsSync(defaultPath) ? dirname(defaultPath) : (hasProject() ? getProjectDir() : homedir());
+  const titleStr = title || 'Select Files';
+  const script = `set fileList to choose file with prompt "${titleStr}" of type {"org.openxmlformats.spreadsheetml.sheet", "xlsx"} default location POSIX file "${startDir}" with multiple selections allowed
+set paths to ""
+repeat with f in fileList
+  set paths to paths & POSIX path of f & linefeed
+end repeat
+return paths`;
+  try {
+    const result = await runOsascript(script);
+    const paths = result.split('\n').map(p => p.trim()).filter(Boolean);
+    res.json({ paths: paths.length > 0 ? paths : null });
+  } catch {
+    res.json({ paths: null });
+  }
+});
+
+router.post('/native-select-directory', async (req, res) => {
+  if (platform() !== 'darwin') return res.status(400).json({ error: 'Native dialogs only supported on macOS' });
+  const { title, defaultPath } = req.body;
+  const startDir = defaultPath && existsSync(defaultPath) ? defaultPath : (hasProject() ? getProjectDir() : homedir());
+  const titleStr = title || 'Select Folder';
+  const script = `set f to POSIX path of (choose folder with prompt "${titleStr}" default location POSIX file "${startDir}")
+return f`;
+  try {
+    const result = await runOsascript(script);
+    // Remove trailing slash if present
+    const clean = result.endsWith('/') ? result.slice(0, -1) : result;
+    res.json({ path: clean || null });
+  } catch {
+    res.json({ path: null });
+  }
 });
 
 // --- User management ---

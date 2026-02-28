@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import { BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_GHOST } from '../ui.js';
-import { getSettings, updateSettings, resetSettings, checkFile, checkDir, detectFiles } from '../api.js';
-import FilePicker from './FilePicker.jsx';
-import DirectoryPicker from './DirectoryPicker.jsx';
+import { getSettings, updateSettings, resetSettings, checkFile, checkDir, detectFiles, nativeSelectFile, nativeSelectFiles, nativeSelectDirectory } from '../api.js';
 
-function FileSection({ icon, label, description, path, status, onBrowse, checking }) {
-  const statusIcon = status === true
+function FileSection({ icon, label, description, path, status, problems, onBrowse, checking }) {
+  const hasProblems = problems?.length > 0;
+  const isWrongType = hasProblems && status === false;
+  const statusIcon = isWrongType
+    ? <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
+    : hasProblems
+    ? <span className="material-symbols-outlined text-amber-500" style={{ fontSize: '16px' }}>warning</span>
+    : status === true
     ? <span className="material-symbols-outlined text-status-positive" style={{ fontSize: '16px' }}>check_circle</span>
     : status === false
     ? <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
@@ -35,6 +39,16 @@ function FileSection({ icon, label, description, path, status, onBrowse, checkin
           Browse
         </button>
       </div>
+      {hasProblems && (
+        <div className={`mt-2 rounded-lg px-3 py-2 ${isWrongType ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+          {problems.map((p, i) => (
+            <div key={i} className={`flex items-start gap-1.5 text-xs ${isWrongType ? 'text-red-800' : 'text-amber-800'}`}>
+              <span className="material-symbols-outlined shrink-0 mt-0.5" style={{ fontSize: '12px' }}>{isWrongType ? 'error' : 'warning'}</span>
+              {p}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -49,11 +63,13 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
   const [txFileStatus, setTxFileStatus] = useState({});
   const [origPaths, setOrigPaths] = useState({});
   const [fileStatus, setFileStatus] = useState({});
+  const [fileProblems, setFileProblems] = useState({});
+  const [txFileProblems, setTxFileProblems] = useState({});
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState({});
-  const [picker, setPicker] = useState(null);
   const [version, setVersion] = useState(1);
   const [addingFile, setAddingFile] = useState(false);
+  const [skippedFiles, setSkippedFiles] = useState([]);
 
   useEffect(() => {
     if (!open) return;
@@ -74,21 +90,19 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
         transactionFiles: s.transactionFiles || {},
       });
       setFileStatus(s.fileStatus || {});
-      setPicker(null);
+      setFileProblems({});
+      setTxFileProblems({});
     });
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const handleKey = (e) => {
-      if (e.key === 'Escape') {
-        if (picker) setPicker(null);
-        else onClose();
-      }
+      if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [open, onClose, picker]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -125,125 +139,112 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
     setChecking((c) => ({ ...c, [key]: false }));
   };
 
-  const handleBrowseCashFlow = async () => {
-    if (isElectron) {
-      const file = await window.electronAPI.selectFile({ title: 'Select Cash Flow File' });
-      if (file) {
-        setCashFlowFile(file);
-        verifyFile(file, 'cashFlowFile');
+  const expectedTypes = { cashFlowFile: 'cashflow', budgetFile: 'budget', bankingFile: 'transactions' };
+  const typeLabels = { cashflow: 'Cash Flow', budget: 'Budget', transactions: 'Transaction' };
+
+  const detectAndStoreProblems = async (file, key) => {
+    try {
+      const result = await detectFiles({ files: [file] });
+      const d = result.detected?.[0];
+      const problems = [...(d?.problems || [])];
+      const expected = expectedTypes[key];
+      if (expected && d?.type !== expected) {
+        const detectedLabel = d?.type && d.type !== 'unknown' ? `Detected as: ${typeLabels[d.type] || d.type}` : 'File structure not recognized';
+        problems.unshift(`This file does not match the expected ${typeLabels[expected]} format. ${detectedLabel}.`);
+        // Override file status to show red icon when type is wrong
+        setFileStatus((s) => ({ ...s, [key]: false }));
       }
-    } else {
-      setPicker('cashflow');
+      setFileProblems((prev) => ({ ...prev, [key]: problems }));
+    } catch {
+      setFileProblems((prev) => ({ ...prev, [key]: [] }));
+    }
+  };
+
+  const selectFile = async (opts) => {
+    if (isElectron) return window.electronAPI.selectFile(opts);
+    const result = await nativeSelectFile(opts);
+    return result.path;
+  };
+
+  const selectFiles = async (opts) => {
+    if (isElectron) return window.electronAPI.selectFiles(opts);
+    const result = await nativeSelectFiles(opts);
+    return result.paths;
+  };
+
+  const selectDirectory = async (opts) => {
+    if (isElectron) return window.electronAPI.selectDirectory(opts);
+    const result = await nativeSelectDirectory(opts);
+    return result.path;
+  };
+
+  const handleBrowseCashFlow = async () => {
+    const file = await selectFile({ title: 'Select Cash Flow File', defaultPath: cashFlowFile || projectDir });
+    if (file) {
+      setCashFlowFile(file);
+      verifyFile(file, 'cashFlowFile');
+      detectAndStoreProblems(file, 'cashFlowFile');
     }
   };
 
   const handleBrowseBudget = async () => {
-    if (isElectron) {
-      const file = await window.electronAPI.selectFile({ title: 'Select Budget File' });
-      if (file) {
-        setBudgetFile(file);
-        verifyFile(file, 'budgetFile');
-      }
-    } else {
-      setPicker('budget');
+    const file = await selectFile({ title: 'Select Budget File', defaultPath: budgetFile || projectDir });
+    if (file) {
+      setBudgetFile(file);
+      verifyFile(file, 'budgetFile');
+      detectAndStoreProblems(file, 'budgetFile');
     }
   };
 
   const handleBrowseBanking = async () => {
-    if (isElectron) {
-      const file = await window.electronAPI.selectFile({ title: 'Select Banking Transactions File' });
-      if (file) {
-        setBankingFile(file);
-        verifyFile(file, 'bankingFile');
-      }
-    } else {
-      setPicker('banking');
+    const file = await selectFile({ title: 'Select Banking Transactions File', defaultPath: bankingFile || projectDir });
+    if (file) {
+      setBankingFile(file);
+      verifyFile(file, 'bankingFile');
     }
   };
 
   const handleBrowseArchive = async () => {
-    if (isElectron) {
-      const dir = await window.electronAPI.selectDirectory();
-      if (dir) {
-        setArchiveDir(dir);
-        verifyDir(dir, 'archiveDir');
-      }
-    } else {
-      setPicker('archive');
+    const dir = await selectDirectory({ title: 'Select Archive Directory', defaultPath: archiveDir || projectDir });
+    if (dir) {
+      setArchiveDir(dir);
+      verifyDir(dir, 'archiveDir');
     }
   };
 
   const handleAddTransactionFile = async () => {
     setAddingFile(true);
+    setSkippedFiles([]);
     try {
-      let files;
-      if (isElectron) {
-        const selected = await window.electronAPI.selectFiles({ title: 'Select Transaction File(s)' });
-        if (!selected) { setAddingFile(false); return; }
-        files = selected;
-      } else {
-        setPicker('add-transaction');
-        setAddingFile(false);
-        return;
-      }
+      const files = await selectFiles({ title: 'Select Transaction File(s)', defaultPath: projectDir });
+      if (!files) { setAddingFile(false); return; }
 
       // Detect the selected files
       const result = await detectFiles({ files });
       const newTxFiles = { ...transactionFiles };
       const newTxStatus = { ...txFileStatus };
+      const newTxProblems = { ...txFileProblems };
+      const skipped = [];
       for (const d of result.detected) {
         if (d.type === 'transactions' && d.year) {
           newTxFiles[d.year] = d.absolutePath;
           newTxStatus[d.year] = true;
+          newTxProblems[d.year] = d.problems || [];
+        } else {
+          const name = d.absolutePath?.split('/').pop() || d.relativePath;
+          skipped.push(name);
         }
       }
       setTransactionFiles(newTxFiles);
       setTxFileStatus(newTxStatus);
+      setTxFileProblems(newTxProblems);
+      setSkippedFiles(skipped);
     } catch {
       // Silently fail
     }
     setAddingFile(false);
   };
 
-  const handleAddTransactionFromPicker = async (filePath) => {
-    setPicker(null);
-    if (!filePath) return;
-    try {
-      const result = await detectFiles({ files: [filePath] });
-      const newTxFiles = { ...transactionFiles };
-      const newTxStatus = { ...txFileStatus };
-      for (const d of result.detected) {
-        if (d.type === 'transactions' && d.year) {
-          newTxFiles[d.year] = d.absolutePath;
-          newTxStatus[d.year] = true;
-        }
-      }
-      setTransactionFiles(newTxFiles);
-      setTxFileStatus(newTxStatus);
-    } catch {
-      // Silently fail
-    }
-  };
-
-  const handleFileSelect = (field) => (filePath) => {
-    setPicker(null);
-    if (field === 'banking') {
-      setBankingFile(filePath);
-      verifyFile(filePath, 'bankingFile');
-    } else if (field === 'cashflow') {
-      setCashFlowFile(filePath);
-      verifyFile(filePath, 'cashFlowFile');
-    } else if (field === 'budget') {
-      setBudgetFile(filePath);
-      verifyFile(filePath, 'budgetFile');
-    }
-  };
-
-  const handleDirSelect = (dirPath) => {
-    setPicker(null);
-    setArchiveDir(dirPath);
-    verifyDir(dirPath, 'archiveDir');
-  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -309,6 +310,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
             description="The Excel file with yearly cash flow projection sheets."
             path={cashFlowFile}
             status={fileStatus.cashFlowFile}
+            problems={fileProblems.cashFlowFile}
             onBrowse={handleBrowseCashFlow}
             checking={checking.cashFlowFile}
           />
@@ -321,6 +323,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
               description="The Excel file with the Consuntivo BUDGET sheet."
               path={budgetFile}
               status={fileStatus.budgetFile}
+              problems={fileProblems.budgetFile}
               onBrowse={handleBrowseBudget}
               checking={checking.budgetFile}
             />
@@ -336,16 +339,29 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
               </div>
               <div className="space-y-1.5 mb-2">
                 {txYears.map((year) => (
-                  <div key={year} className="flex items-center gap-2 text-xs bg-white rounded-lg px-3 py-2 border border-surface-border">
-                    <span className="font-medium text-on-surface w-10">{year}</span>
-                    <span className="text-on-surface-tertiary truncate flex-1" title={transactionFiles[year]}>
-                      {transactionFiles[year]}
-                    </span>
-                    {txFileStatus[year] === true && (
-                      <span className="material-symbols-outlined text-status-positive shrink-0" style={{ fontSize: '14px' }}>check_circle</span>
-                    )}
-                    {txFileStatus[year] === false && (
-                      <span className="material-symbols-outlined text-status-negative shrink-0" style={{ fontSize: '14px' }}>cancel</span>
+                  <div key={year}>
+                    <div className="flex items-center gap-2 text-xs bg-white rounded-lg px-3 py-2 border border-surface-border">
+                      <span className="font-medium text-on-surface w-10">{year}</span>
+                      <span className="text-on-surface-tertiary truncate flex-1" title={transactionFiles[year]}>
+                        {transactionFiles[year]}
+                      </span>
+                      {txFileProblems[year]?.length > 0 ? (
+                        <span className="material-symbols-outlined text-amber-500 shrink-0" style={{ fontSize: '14px' }}>warning</span>
+                      ) : txFileStatus[year] === true ? (
+                        <span className="material-symbols-outlined text-status-positive shrink-0" style={{ fontSize: '14px' }}>check_circle</span>
+                      ) : txFileStatus[year] === false ? (
+                        <span className="material-symbols-outlined text-status-negative shrink-0" style={{ fontSize: '14px' }}>cancel</span>
+                      ) : null}
+                    </div>
+                    {txFileProblems[year]?.length > 0 && (
+                      <div className="mt-1 ml-12 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5">
+                        {txFileProblems[year].map((p, i) => (
+                          <div key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
+                            <span className="material-symbols-outlined shrink-0 mt-0.5" style={{ fontSize: '10px' }}>warning</span>
+                            {p}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -368,6 +384,16 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
                 )}
                 Add Transaction File
               </button>
+              {skippedFiles.length > 0 && (
+                <div className="mt-2 rounded-lg bg-red-50 border border-red-200 px-2 py-1.5">
+                  <div className="flex items-start gap-1.5 text-xs text-red-800">
+                    <span className="material-symbols-outlined shrink-0 mt-0.5" style={{ fontSize: '12px' }}>error</span>
+                    {skippedFiles.length === 1
+                      ? `"${skippedFiles[0]}" is not a transaction file`
+                      : `${skippedFiles.length} files were not recognized as transaction files`}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             /* v1: Single banking file + archive dir */
@@ -418,41 +444,6 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
         </div>
       </div>
 
-      {picker === 'banking' && (
-        <FilePicker
-          initial={bankingFile}
-          onSelect={handleFileSelect('banking')}
-          onCancel={() => setPicker(null)}
-        />
-      )}
-      {picker === 'cashflow' && (
-        <FilePicker
-          initial={cashFlowFile}
-          onSelect={handleFileSelect('cashflow')}
-          onCancel={() => setPicker(null)}
-        />
-      )}
-      {picker === 'budget' && (
-        <FilePicker
-          initial={budgetFile || projectDir}
-          onSelect={handleFileSelect('budget')}
-          onCancel={() => setPicker(null)}
-        />
-      )}
-      {picker === 'archive' && (
-        <DirectoryPicker
-          initial={archiveDir}
-          onSelect={handleDirSelect}
-          onCancel={() => setPicker(null)}
-        />
-      )}
-      {picker === 'add-transaction' && (
-        <FilePicker
-          initial={projectDir}
-          onSelect={handleAddTransactionFromPicker}
-          onCancel={() => setPicker(null)}
-        />
-      )}
     </div>
   );
 }

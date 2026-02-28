@@ -148,6 +148,22 @@ export default function App() {
     return [...set].sort((a, b) => b - a).map(String);
   }, [txYears, cfYears, budgetYears]);
 
+  // ── Computed: sections disabled for the selected year ──
+  const disabledSections = useMemo(() => {
+    const disabled = new Set();
+    if (txYears.length > 0 && !txYears.includes(globalYear)) disabled.add('transactions');
+    if (cfYears.length > 0 && !cfYears.includes(globalYear)) disabled.add('cashflow');
+    if (!budgetYears.includes(globalYear)) disabled.add('budget');
+    return disabled;
+  }, [globalYear, txYears, cfYears, budgetYears]);
+
+  // ── Auto-redirect when current section becomes disabled ──
+  useEffect(() => {
+    if (disabledSections.has(section)) {
+      setSection('home');
+    }
+  }, [disabledSections, section]);
+
   // ── Sidebar collapse persistence ──
   useEffect(() => {
     localStorage.setItem('g-dash-sidebar-collapsed', sidebarCollapsed.toString());
@@ -217,8 +233,9 @@ export default function App() {
   }, [globalYear, month, pushToast]);
 
   useEffect(() => {
+    if (disabledSections.has('transactions')) return;
     if (section === 'transactions') loadTransactions();
-  }, [globalYear, month, section, loadTransactions]);
+  }, [globalYear, month, section, disabledSections, loadTransactions]);
 
   useEffect(() => {
     if (needsSetup === false) {
@@ -239,8 +256,9 @@ export default function App() {
   }, [globalYear, pushToast]);
 
   useEffect(() => {
+    if (disabledSections.has('cashflow')) return;
     if (section === 'cashflow') loadCashFlow();
-  }, [section, globalYear, loadCashFlow]);
+  }, [section, globalYear, disabledSections, loadCashFlow]);
 
   const loadBudget = useCallback(async () => {
     setBudgetLoading(true);
@@ -254,8 +272,9 @@ export default function App() {
   }, [globalYear, pushToast]);
 
   useEffect(() => {
+    if (disabledSections.has('budget')) return;
     if (section === 'budget' || (section === 'analytics' && analyticsView === 'budget')) loadBudget();
-  }, [section, analyticsView, globalYear, loadBudget]);
+  }, [section, analyticsView, globalYear, disabledSections, loadBudget]);
 
   const loadBudgetEntries = useCallback(async () => {
     setBudgetEntriesLoading(true);
@@ -270,16 +289,18 @@ export default function App() {
   }, [globalYear, pushToast]);
 
   useEffect(() => {
+    if (disabledSections.has('budget')) return;
     if (section === 'budget' && (budgetView === 'overview' || budgetView === 'projection' || budgetView === 'entries')) {
       loadBudgetEntries();
     }
-  }, [section, budgetView, globalYear, loadBudgetEntries]);
+  }, [section, budgetView, globalYear, disabledSections, loadBudgetEntries]);
 
   useEffect(() => {
+    if (disabledSections.has('budget')) return;
     if (section === 'budget' && budgetView === 'projection') {
       getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null));
     }
-  }, [section, budgetView, globalYear]);
+  }, [section, budgetView, globalYear, disabledSections]);
 
   const loadElements = useCallback(async () => {
     setElementsLoading(true);
@@ -644,6 +665,7 @@ export default function App() {
           setUsers(u);
           setCurrentUser(activeUser);
         }}
+        disabledSections={disabledSections}
       >
 
         {/* ═══ HOME ═══ */}
@@ -917,7 +939,7 @@ export default function App() {
 
             {budgetView === 'charts' && (
               <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-                <BudgetCharts data={budget} />
+                <BudgetCharts data={budget} year={globalYear} />
               </div>
             )}
 
@@ -968,7 +990,7 @@ export default function App() {
                     <div className="h-[320px] bg-surface-container rounded-xl" />
                   </div>
                 ) : (
-                  <BudgetCharts data={budget} />
+                  <BudgetCharts data={budget} year={globalYear} />
                 )}
               </div>
             )}

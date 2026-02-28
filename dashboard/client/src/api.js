@@ -172,6 +172,27 @@ export const checkFile = (path) =>
     body: JSON.stringify({ path }),
   });
 
+export const nativeSelectFile = ({ title, defaultPath } = {}) =>
+  request('/settings/native-select-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, defaultPath }),
+  });
+
+export const nativeSelectFiles = ({ title, defaultPath } = {}) =>
+  request('/settings/native-select-files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, defaultPath }),
+  });
+
+export const nativeSelectDirectory = ({ title, defaultPath } = {}) =>
+  request('/settings/native-select-directory', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, defaultPath }),
+  });
+
 export const browseDir = (path) =>
   request(`/settings/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`);
 

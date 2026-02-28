@@ -1,4 +1,4 @@
-import { SIDEBAR_ITEM, SIDEBAR_ITEM_ACTIVE, SIDEBAR_ITEM_COLLAPSED, SIDEBAR_ITEM_COLLAPSED_ACTIVE } from '../ui.js';
+import { SIDEBAR_ITEM, SIDEBAR_ITEM_ACTIVE, SIDEBAR_ITEM_COLLAPSED, SIDEBAR_ITEM_COLLAPSED_ACTIVE, SIDEBAR_ITEM_DISABLED, SIDEBAR_ITEM_COLLAPSED_DISABLED } from '../ui.js';
 import logoPng from '../assets/logo.png';
 
 const NAV_ITEMS = [
@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { id: 'activity', label: 'Activity', icon: 'history' },
 ];
 
-export default function Sidebar({ section, onNavigate, collapsed, onToggle, isElectron }) {
+export default function Sidebar({ section, onNavigate, collapsed, onToggle, isElectron, disabledSections = new Set() }) {
   return (
     <aside
       className={`fixed left-0 ${isElectron ? 'top-[38px]' : 'top-0'} bottom-0 z-30 bg-white border-r border-surface-border flex flex-col sidebar-transition ${
@@ -37,17 +37,23 @@ export default function Sidebar({ section, onNavigate, collapsed, onToggle, isEl
       <nav className={`flex-1 py-2 space-y-0.5 overflow-y-auto ${collapsed ? 'px-1' : 'px-2'}`}>
         {NAV_ITEMS.map((item) => {
           const isActive = section === item.id;
-          const cls = collapsed
-            ? (isActive ? SIDEBAR_ITEM_COLLAPSED_ACTIVE : SIDEBAR_ITEM_COLLAPSED)
-            : (isActive ? SIDEBAR_ITEM_ACTIVE : SIDEBAR_ITEM);
+          const isDisabled = disabledSections.has(item.id);
+          const cls = isDisabled
+            ? (collapsed ? SIDEBAR_ITEM_COLLAPSED_DISABLED : SIDEBAR_ITEM_DISABLED)
+            : collapsed
+              ? (isActive ? SIDEBAR_ITEM_COLLAPSED_ACTIVE : SIDEBAR_ITEM_COLLAPSED)
+              : (isActive ? SIDEBAR_ITEM_ACTIVE : SIDEBAR_ITEM);
+          const tooltip = isDisabled
+            ? `No ${item.label.toLowerCase()} data for this year`
+            : (collapsed ? item.label : undefined);
           return (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)}
+              onClick={isDisabled ? undefined : () => onNavigate(item.id)}
               className={cls}
-              title={collapsed ? item.label : undefined}
+              title={tooltip}
             >
-              {isActive && !collapsed && (
+              {isActive && !collapsed && !isDisabled && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-accent" />
               )}
               <span className="material-symbols-outlined shrink-0" style={{ fontSize: '20px' }}>

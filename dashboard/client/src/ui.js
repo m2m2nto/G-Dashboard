@@ -41,6 +41,12 @@ export const SIDEBAR_ITEM_COLLAPSED =
 export const SIDEBAR_ITEM_COLLAPSED_ACTIVE =
   'relative flex items-center justify-center w-full py-2 rounded-lg bg-primary-light text-primary transition-colors cursor-pointer';
 
+export const SIDEBAR_ITEM_DISABLED =
+  'relative flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium text-on-surface-tertiary/50 cursor-default';
+
+export const SIDEBAR_ITEM_COLLAPSED_DISABLED =
+  'relative flex items-center justify-center w-full py-2 rounded-lg text-on-surface-tertiary/50 cursor-default';
+
 // Sub-tab bar
 export const SUB_TAB =
   'inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors';

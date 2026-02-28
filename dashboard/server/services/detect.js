@@ -2,7 +2,7 @@ import { readdir, readFile } from 'fs/promises';
 import { join, extname } from 'path';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
-import { MONTHS } from '../config.js';
+import { MONTHS, BUDGET_SCENARIOS, BUDGET_COST_ROWS, BUDGET_REVENUE_ROWS } from '../config.js';
 
 const ITALIAN_MONTHS = new Set(MONTHS);
 
@@ -30,8 +30,182 @@ async function getSheetNames(filePath) {
 }
 
 /**
+ * Build a sheet-name → sheet-file mapping from a JSZip instance.
+ */
+function buildSheetMap(wbXml, relsXml) {
+  const rels = {};
+  const relRegex = /<Relationship\s[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g;
+  let rm;
+  while ((rm = relRegex.exec(relsXml)) !== null) {
+    rels[rm[1]] = rm[2];
+  }
+  const sheetMap = {};
+  const sheetRegex = /<sheet\s[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"/g;
+  let sm;
+  while ((sm = sheetRegex.exec(wbXml)) !== null) {
+    const name = sm[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+    sheetMap[name] = rels[sm[2]];
+  }
+  return sheetMap;
+}
+
+/**
+ * Read specific cell values from a sheet inside an .xlsx zip.
+ * Returns a map of cell refs (e.g. "A4", "B3") to string values.
+ * @param {JSZip} zip - already-loaded zip
+ * @param {Object} sheetMap - sheet name → file path mapping
+ * @param {string} sheetName - sheet to read from
+ * @param {string[]} cellRefs - cell references to read (e.g. ["A4", "A5", "B3"])
+ */
+export async function readCellsFromZip(zip, sheetMap, sheetName, cellRefs) {
+  const target = sheetMap[sheetName];
+  if (!target) return {};
+  const sheetFile = zip.file(`xl/${target}`);
+  if (!sheetFile) return {};
+
+  const xml = await sheetFile.async('string');
+  const result = {};
+  const wanted = new Set(cellRefs);
+
+  // Two-step approach: first match each cell (self-closing or with content up to </c>),
+  // then extract <v> from its body. This prevents crossing </c> boundaries when
+  // a cell has <f> but no <v> (formula-only cells).
+  const cellRegex = /<c\s+r="([A-Z]+\d+)"[^/>]*(?:\/>|>((?:(?!<\/c>)[\s\S])*)<\/c>)/g;
+  let cm;
+  while ((cm = cellRegex.exec(xml)) !== null) {
+    if (wanted.has(cm[1]) && cm[2] != null) {
+      const vMatch = cm[2].match(/<v>([^<]*)<\/v>/);
+      if (vMatch) result[cm[1]] = vMatch[1];
+    }
+  }
+  return result;
+}
+
+/**
+ * Validate the internal structure of a detected Excel file.
+ * Returns an array of problem descriptions (empty = all good).
+ */
+export async function validateFileStructure(filePath, type, sheetNames) {
+  const problems = [];
+  let buf, zip, wbXml, relsXml, sheetMap;
+
+  try {
+    buf = await readFile(filePath);
+    zip = await JSZip.loadAsync(buf);
+    wbXml = await zip.file('xl/workbook.xml')?.async('string');
+    relsXml = await zip.file('xl/_rels/workbook.xml.rels')?.async('string');
+    if (!wbXml || !relsXml) return ['Could not read workbook structure'];
+    sheetMap = buildSheetMap(wbXml, relsXml);
+  } catch {
+    return ['Could not open file for validation'];
+  }
+
+  if (type === 'transactions') {
+    const monthSheets = sheetNames.filter(
+      (n) => ITALIAN_MONTHS.has(n) || /^\d{4}\s+/.test(n) && ITALIAN_MONTHS.has(n.replace(/^\d{4}\s+/, ''))
+    );
+    const firstMonth = monthSheets[0];
+    if (!firstMonth) {
+      problems.push('No month sheets found to validate');
+      return problems;
+    }
+    const cells = await readCellsFromZip(zip, sheetMap, firstMonth, ['A3', 'C3']);
+    if (!cells.A3) {
+      problems.push(`Sheet "${firstMonth}" row 3 is empty — expected transaction data starting at row 3`);
+    } else {
+      // Check if A3 looks like a date (serial number or date string)
+      const v = parseFloat(cells.A3);
+      const looksLikeDate = (v > 30000 && v < 100000) || /\d{2}\/\d{2}\/\d{4}/.test(cells.A3) || /^\d{4}-\d{2}-\d{2}/.test(cells.A3);
+      if (!looksLikeDate) {
+        problems.push(`Sheet "${firstMonth}" column A does not contain dates — expected DD/MM/YYYY format`);
+      }
+    }
+    if (!cells.C3) {
+      problems.push(`Sheet "${firstMonth}" row 3 column C is empty — expected a transaction description`);
+    }
+  }
+
+  if (type === 'cashflow') {
+    const yearSheets = sheetNames.filter((n) => /^\d{4}$/.test(n));
+    const sheetNamesLower = sheetNames.map((n) => n.toLowerCase());
+
+    // Check for sheets the app actually reads from the cash flow file
+    const requiredSheets = ['yearly', 'yoy - qoq'];
+    for (const s of requiredSheets) {
+      if (!sheetNamesLower.includes(s)) {
+        problems.push(`Missing expected sheet "${s}"`);
+      }
+    }
+
+    // Check first year sheet has the expected layout:
+    // Row 3 = section header, rows 4-15 = cost categories, rows 20-25 = revenue categories
+    const firstYear = yearSheets[0];
+    if (firstYear) {
+      const costRefs = [];
+      for (let r = 4; r <= 15; r++) costRefs.push(`A${r}`);
+      const revRefs = [];
+      for (let r = 20; r <= 25; r++) revRefs.push(`A${r}`);
+      const cells = await readCellsFromZip(zip, sheetMap, firstYear, ['A3', ...costRefs, ...revRefs]);
+
+      if (!cells.A3) {
+        problems.push(`Sheet "${firstYear}": row 3 should contain a section header (e.g. "COSTI") but is empty`);
+      }
+      const emptyCost = costRefs.filter((ref) => !cells[ref]);
+      if (emptyCost.length > 6) {
+        problems.push(`Sheet "${firstYear}": column A rows 4-15 should contain cost category names but most are empty`);
+      }
+      const emptyRev = revRefs.filter((ref) => !cells[ref]);
+      if (emptyRev.length > 3) {
+        problems.push(`Sheet "${firstYear}": column A rows 20-25 should contain revenue category names but most are empty`);
+      }
+    }
+  }
+
+  if (type === 'budget') {
+    const sheetNamesLower = sheetNames.map((n) => n.toLowerCase());
+
+    // Find years in budget sheet names
+    const budgetYears = new Set();
+    for (const n of sheetNamesLower) {
+      const m = n.match(/budget\s+(\d{4})/);
+      if (m) budgetYears.add(m[1]);
+    }
+
+    for (const year of budgetYears) {
+      const generaleName = `BUDGET ${year} (generale)`;
+      const hasGenerale = sheetNames.some((n) => n.toLowerCase() === generaleName.toLowerCase());
+      if (!hasGenerale) {
+        problems.push(`Missing sheet "${generaleName}"`);
+        continue;
+      }
+
+      // Check column B rows 3-14 have cost category names in generale sheet
+      const actualName = sheetNames.find((n) => n.toLowerCase() === generaleName.toLowerCase());
+      const costRefs = [];
+      for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) costRefs.push(`B${r}`);
+      const cells = await readCellsFromZip(zip, sheetMap, actualName, costRefs);
+      const emptyCount = costRefs.filter((ref) => !cells[ref]).length;
+      if (emptyCount > 6) {
+        problems.push(`Sheet "${actualName}" column B rows ${BUDGET_COST_ROWS.start}-${BUDGET_COST_ROWS.end} should contain cost categories but most are empty`);
+      }
+
+      // Check at least one scenario sheet exists
+      const scenarioSheets = BUDGET_SCENARIOS.filter((s) => {
+        const expected = `budget ${year} (${s})`;
+        return sheetNamesLower.some((n) => n === expected);
+      });
+      if (scenarioSheets.length === 0) {
+        problems.push(`No scenario sheets found for ${year} (expected "BUDGET ${year} (certo)", etc.)`);
+      }
+    }
+  }
+
+  return problems;
+}
+
+/**
  * Detect whether an .xlsx file is a cash flow file, a transaction file, or unknown.
- * Returns { type: 'cashflow'|'transactions'|'unknown', year?, years? }
+ * Returns { type: 'cashflow'|'transactions'|'unknown', year?, years?, problems? }
  */
 export async function detectFileType(filePath) {
   let sheetNames;
@@ -48,7 +222,8 @@ export async function detectFileType(filePath) {
   // --- Budget detection ---
   // Has sheets matching "BUDGET YYYY" pattern (e.g. "BUDGET 2026 (generale)")
   if (sheetNamesLower.some((n) => /budget\s+\d{4}/.test(n))) {
-    return { type: 'budget' };
+    const problems = await validateFileStructure(filePath, 'budget', sheetNames);
+    return { type: 'budget', problems };
   }
 
   // --- Cash flow detection ---
@@ -56,7 +231,8 @@ export async function detectFileType(filePath) {
   const yearSheets = sheetNames.filter((n) => /^\d{4}$/.test(n));
   const markerCount = CF_MARKER_SHEETS.filter((m) => sheetNamesLower.includes(m)).length;
   if (yearSheets.length > 0 && markerCount >= 2) {
-    return { type: 'cashflow', years: yearSheets.sort() };
+    const problems = await validateFileStructure(filePath, 'cashflow', sheetNames);
+    return { type: 'cashflow', years: yearSheets.sort(), problems };
   }
 
   // --- Transaction file detection ---
@@ -68,13 +244,14 @@ export async function detectFileType(filePath) {
   });
   const allMonthSheets = [...monthSheets, ...prefixedMonthSheets];
   if (allMonthSheets.length >= 1) {
+    const problems = await validateFileStructure(filePath, 'transactions', sheetNames);
     // If prefixed, we can get the year directly from the sheet name
     if (prefixedMonthSheets.length > 0 && monthSheets.length === 0) {
       const m = prefixedMonthSheets[0].match(/^(\d{4})\s/);
-      return { type: 'transactions', year: m[1] };
+      return { type: 'transactions', year: m[1], problems };
     }
     const year = await detectTransactionYear(filePath, monthSheets.length > 0 ? monthSheets : prefixedMonthSheets);
-    return { type: 'transactions', year };
+    return { type: 'transactions', year, problems };
   }
 
   return { type: 'unknown' };
@@ -132,28 +309,11 @@ async function detectYearFromZip(filePath, monthSheets) {
   const buf = await readFile(filePath);
   const zip = await JSZip.loadAsync(buf);
 
-  // Build sheet name → sheet file mapping from workbook.xml + _rels
   const wbXml = await zip.file('xl/workbook.xml')?.async('string');
   const relsXml = await zip.file('xl/_rels/workbook.xml.rels')?.async('string');
   if (!wbXml || !relsXml) return null;
 
-  // Parse relationships: rId → target file
-  const rels = {};
-  const relRegex = /<Relationship\s[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g;
-  let rm;
-  while ((rm = relRegex.exec(relsXml)) !== null) {
-    rels[rm[1]] = rm[2];
-  }
-
-  // Parse sheet entries: name → rId
-  const sheetMap = {};
-  const sheetRegex = /<sheet\s[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"/g;
-  let sm;
-  while ((sm = sheetRegex.exec(wbXml)) !== null) {
-    const name = sm[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
-    sheetMap[name] = rels[sm[2]];
-  }
-
+  const sheetMap = buildSheetMap(wbXml, relsXml);
   const yearCounts = {};
 
   for (const sheetName of monthSheets) {
@@ -165,7 +325,7 @@ async function detectYearFromZip(filePath, monthSheets) {
     const xml = await sheetFile.async('string');
 
     // Find cell values in column A (rows 3+): <c r="A3"...><v>...</v></c>
-    const cellRegex = /<c\s+r="A(\d+)"[^>]*>(?:[\s\S]*?<v>([^<]*)<\/v>)?[\s\S]*?<\/c>/g;
+    const cellRegex = /<c\s+r="A(\d+)"[^/>]*(?:\/>|>(?:[\s\S]*?<v>([^<]*)<\/v>)?[\s\S]*?<\/c>)/g;
     let cm;
     while ((cm = cellRegex.exec(xml)) !== null) {
       const rowNum = parseInt(cm[1]);
@@ -306,11 +466,24 @@ export function buildProposal(detected) {
     }
   }
 
+  // Collect per-file structural problems
+  const cashFlowProblems = cashFlow?.problems?.length ? cashFlow.problems : [];
+  const budgetProblems = budget?.problems?.length ? budget.problems : [];
+  const transactionProblems = {};
+  for (const t of transactions) {
+    if (t.problems?.length) {
+      transactionProblems[t.year] = t.problems;
+    }
+  }
+
   return {
     proposal: {
       cashFlowFile: cashFlow?.relativePath || null,
       budgetFile: budget?.relativePath || null,
       transactionFiles,
+      cashFlowProblems,
+      budgetProblems,
+      transactionProblems,
     },
     detected,
     warnings,

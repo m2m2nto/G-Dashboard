@@ -17,6 +17,7 @@ export default function AppLayout({
   currentUser,
   onSwitchUser,
   onAddUser,
+  disabledSections,
   children,
 }) {
   return (
@@ -35,6 +36,7 @@ export default function AppLayout({
         collapsed={sidebarCollapsed}
         onToggle={onToggleSidebar}
         isElectron={isElectron}
+        disabledSections={disabledSections}
       />
 
       {/* Main area, offset by sidebar width */}

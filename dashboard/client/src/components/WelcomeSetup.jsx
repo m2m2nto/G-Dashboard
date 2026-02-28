@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_GHOST } from '../ui.js';
-import { checkProject, openProject, createProject, detectFiles } from '../api.js';
-import DirectoryPicker from './DirectoryPicker.jsx';
+import { checkProject, openProject, createProject, detectFiles, nativeSelectDirectory, nativeSelectFiles } from '../api.js';
 
 function Spinner({ size = 'h-4 w-4', className = '' }) {
   return (
@@ -22,7 +21,6 @@ export default function WelcomeSetup({ onComplete }) {
   // Steps: 'select' | 'scanning' | 'confirm'
   const [step, setStep] = useState('select');
   const [projectDir, setProjectDir] = useState('');
-  const [dirPicker, setDirPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -36,7 +34,6 @@ export default function WelcomeSetup({ onComplete }) {
   // --- Step 1: Select folder (or files) ---
 
   const handleSelectFolder = async (dir) => {
-    setDirPicker(false);
     if (!dir) return;
     setProjectDir(dir);
     setError(null);
@@ -75,7 +72,13 @@ export default function WelcomeSetup({ onComplete }) {
   };
 
   const handleSelectFiles = async () => {
-    const files = await window.electronAPI.selectFiles({ title: 'Select Excel Files' });
+    let files;
+    if (isElectron) {
+      files = await window.electronAPI.selectFiles({ title: 'Select Excel Files' });
+    } else {
+      const result = await nativeSelectFiles({ title: 'Select Excel Files' });
+      files = result.paths;
+    }
     if (!files || files.length === 0) return;
     setError(null);
 
@@ -96,14 +99,15 @@ export default function WelcomeSetup({ onComplete }) {
     }
   };
 
-  const handleBrowseFolder = () => {
+  const handleBrowseFolder = async () => {
+    let dir;
     if (isElectron) {
-      window.electronAPI.selectDirectory().then((dir) => {
-        if (dir) handleSelectFolder(dir);
-      });
+      dir = await window.electronAPI.selectDirectory();
     } else {
-      setDirPicker(true);
+      const result = await nativeSelectDirectory({ title: 'Select Project Folder' });
+      dir = result.path;
     }
+    if (dir) handleSelectFolder(dir);
   };
 
   // --- Step 3: Confirm and create project ---
@@ -195,9 +199,15 @@ export default function WelcomeSetup({ onComplete }) {
               <FileTypeIcon type="cashflow" />
               <span className="text-sm font-medium text-on-surface">Cash Flow</span>
               {proposal?.cashFlowFile ? (
-                <span className="ml-auto">
-                  <span className="material-symbols-outlined text-status-positive" style={{ fontSize: '16px' }}>check_circle</span>
-                </span>
+                proposal?.cashFlowProblems?.length > 0 ? (
+                  <span className="ml-auto">
+                    <span className="material-symbols-outlined text-amber-500" style={{ fontSize: '16px' }}>warning</span>
+                  </span>
+                ) : (
+                  <span className="ml-auto">
+                    <span className="material-symbols-outlined text-status-positive" style={{ fontSize: '16px' }}>check_circle</span>
+                  </span>
+                )
               ) : (
                 <span className="ml-auto">
                   <span className="material-symbols-outlined text-status-negative" style={{ fontSize: '16px' }}>cancel</span>
@@ -207,6 +217,16 @@ export default function WelcomeSetup({ onComplete }) {
             <div className="text-xs text-on-surface-tertiary truncate" title={proposal?.cashFlowFile}>
               {proposal?.cashFlowFile || 'Not found'}
             </div>
+            {proposal?.cashFlowProblems?.length > 0 && (
+              <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                {proposal.cashFlowProblems.map((p, i) => (
+                  <div key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
+                    <span className="material-symbols-outlined shrink-0 mt-0.5" style={{ fontSize: '12px' }}>warning</span>
+                    {p}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Transaction Files */}
@@ -225,12 +245,28 @@ export default function WelcomeSetup({ onComplete }) {
             {txYears.length > 0 ? (
               <div className="space-y-1">
                 {txYears.map((year) => (
-                  <div key={year} className="flex items-center gap-2 text-xs">
-                    <span className="font-medium text-on-surface w-10">{year}</span>
-                    <span className="text-on-surface-tertiary truncate flex-1" title={proposal.transactionFiles[year]}>
-                      {proposal.transactionFiles[year]}
-                    </span>
-                    <span className="material-symbols-outlined text-status-positive shrink-0" style={{ fontSize: '14px' }}>check_circle</span>
+                  <div key={year}>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium text-on-surface w-10">{year}</span>
+                      <span className="text-on-surface-tertiary truncate flex-1" title={proposal.transactionFiles[year]}>
+                        {proposal.transactionFiles[year]}
+                      </span>
+                      {proposal.transactionProblems?.[year]?.length > 0 ? (
+                        <span className="material-symbols-outlined text-amber-500 shrink-0" style={{ fontSize: '14px' }}>warning</span>
+                      ) : (
+                        <span className="material-symbols-outlined text-status-positive shrink-0" style={{ fontSize: '14px' }}>check_circle</span>
+                      )}
+                    </div>
+                    {proposal.transactionProblems?.[year]?.length > 0 && (
+                      <div className="mt-1 ml-12 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5">
+                        {proposal.transactionProblems[year].map((p, i) => (
+                          <div key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
+                            <span className="material-symbols-outlined shrink-0 mt-0.5" style={{ fontSize: '10px' }}>warning</span>
+                            {p}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -238,6 +274,38 @@ export default function WelcomeSetup({ onComplete }) {
               <div className="text-xs text-on-surface-tertiary">No transaction files found</div>
             )}
           </div>
+
+          {/* Budget File (if detected) */}
+          {proposal?.budgetFile && (
+            <div className="rounded-xl bg-surface-container px-4 py-3 text-left mb-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="material-symbols-outlined text-primary" style={{ fontSize: '18px' }}>account_balance</span>
+                <span className="text-sm font-medium text-on-surface">Budget</span>
+                {proposal.budgetProblems?.length > 0 ? (
+                  <span className="ml-auto">
+                    <span className="material-symbols-outlined text-amber-500" style={{ fontSize: '16px' }}>warning</span>
+                  </span>
+                ) : (
+                  <span className="ml-auto">
+                    <span className="material-symbols-outlined text-status-positive" style={{ fontSize: '16px' }}>check_circle</span>
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-on-surface-tertiary truncate" title={proposal.budgetFile}>
+                {proposal.budgetFile}
+              </div>
+              {proposal.budgetProblems?.length > 0 && (
+                <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                  {proposal.budgetProblems.map((p, i) => (
+                    <div key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
+                      <span className="material-symbols-outlined shrink-0 mt-0.5" style={{ fontSize: '12px' }}>warning</span>
+                      {p}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Unrecognized files */}
           {detected.filter((d) => d.type === 'unknown').length > 0 && (
@@ -304,12 +372,10 @@ export default function WelcomeSetup({ onComplete }) {
             <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>folder_open</span>
             Select Folder
           </button>
-          {isElectron && (
-            <button onClick={handleSelectFiles} disabled={saving} className={BUTTON_NEUTRAL + ' w-full'}>
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>upload_file</span>
-              Select Files
-            </button>
-          )}
+          <button onClick={handleSelectFiles} disabled={saving} className={BUTTON_NEUTRAL + ' w-full'}>
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>upload_file</span>
+            Select Files
+          </button>
         </div>
 
         {error && (
@@ -324,13 +390,6 @@ export default function WelcomeSetup({ onComplete }) {
         )}
       </div>
 
-      {dirPicker && (
-        <DirectoryPicker
-          initial={projectDir}
-          onSelect={handleSelectFolder}
-          onCancel={() => setDirPicker(false)}
-        />
-      )}
     </div>
   );
 }
