@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build Electron app for GL-Dashboard
+# Build Electron app for G-Dashboard
 # Run from dashboard/ directory: bash scripts/build-electron.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DASHBOARD_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 STAGING_DIR="$DASHBOARD_DIR/.electron-staging"
 
-echo "=== Building GL-Dashboard Electron App ==="
+echo "=== Building G-Dashboard Electron App ==="
 echo "Dashboard dir: $DASHBOARD_DIR"
 cd "$DASHBOARD_DIR"
 

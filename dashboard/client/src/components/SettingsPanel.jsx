@@ -414,7 +414,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
         </div>
 
         <div className="text-center pt-3 mt-3 border-t border-surface-border">
-          <span className="text-[11px] text-on-surface-tertiary">GL-Dashboard v{__APP_VERSION__} ({__APP_BUILD__})</span>
+          <span className="text-[11px] text-on-surface-tertiary">G-Dashboard v{__APP_VERSION__} ({__APP_BUILD__})</span>
         </div>
       </div>
 

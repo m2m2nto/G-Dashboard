@@ -1,5 +1,5 @@
-appId: com.gl-dashboard.app
-productName: GL-Dashboard
+appId: com.g-dashboard.app
+productName: G-Dashboard
 
 directories:
   output: dist/electron
