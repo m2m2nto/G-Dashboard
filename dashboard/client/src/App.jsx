@@ -54,10 +54,11 @@ import {
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
 
-const TX_SUB_TABS = [
-  { id: 'list', label: 'Transactions', icon: 'receipt_long' },
-  { id: 'cashflow', label: 'Lux Cash Flow', icon: 'monitoring' },
-  { id: 'categories', label: 'Recipients', icon: 'category' },
+const CF_SUB_TABS = [
+  { id: 'overview', label: 'Overview', icon: 'payments' },
+  { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
+  { id: 'lux-cashflow', label: 'Lux Cash Flow', icon: 'monitoring' },
+  { id: 'recipients', label: 'Recipients', icon: 'category' },
   { id: 'mapping', label: 'Mapping', icon: 'link' },
 ];
 
@@ -74,10 +75,11 @@ const ANALYTICS_SUB_TABS = [
 export default function App() {
   // ── Navigation state ──
   const [section, setSection] = useState('home');
-  const [txView, setTxView] = useState('list');
+  const [cfView, setCfView] = useState('overview');
   const [budgetView, setBudgetView] = useState('overview');
   const [entriesInitialMonth, setEntriesInitialMonth] = useState(undefined);
   const [entriesInitialCategory, setEntriesInitialCategory] = useState(undefined);
+  const [entriesInitialScenario, setEntriesInitialScenario] = useState('consuntivo');
   const [analyticsView, setAnalyticsView] = useState('cashflow');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('g-dash-sidebar-collapsed') === 'true';
@@ -158,8 +160,8 @@ export default function App() {
   // ── Computed: sections disabled for the selected year ──
   const disabledSections = useMemo(() => {
     const disabled = new Set();
-    if (txYears.length === 0 || !txYears.includes(globalYear)) disabled.add('transactions');
-    if (!budgetYears.includes(globalYear)) { disabled.add('budget'); disabled.add('cf-projection'); }
+    if ((txYears.length === 0 || !txYears.includes(globalYear)) && !budgetYears.includes(globalYear)) disabled.add('cashflow');
+    if (!budgetYears.includes(globalYear)) disabled.add('budget');
     if (cfYears.length === 0) disabled.add('analytics');
     return disabled;
   }, [globalYear, txYears, cfYears, budgetYears]);
@@ -231,9 +233,8 @@ export default function App() {
   }, [globalYear, month, pushToast]);
 
   useEffect(() => {
-    if (disabledSections.has('transactions')) return;
-    if (section === 'transactions') loadTransactions();
-  }, [globalYear, month, section, disabledSections, loadTransactions]);
+    if (section === 'cashflow' && cfView === 'transactions') loadTransactions();
+  }, [globalYear, month, section, cfView, loadTransactions]);
 
   useEffect(() => {
     if (needsSetup === false) {
@@ -258,8 +259,8 @@ export default function App() {
   }, [globalYear, txYears, pushToast]);
 
   useEffect(() => {
-    if (section === 'transactions' && txView === 'cashflow') loadCashFlow();
-  }, [section, txView, globalYear, loadCashFlow]);
+    if (section === 'cashflow' && cfView === 'lux-cashflow') loadCashFlow();
+  }, [section, cfView, globalYear, loadCashFlow]);
 
   const loadBudget = useCallback(async () => {
     setBudgetLoading(true);
@@ -274,8 +275,8 @@ export default function App() {
 
   useEffect(() => {
     if (disabledSections.has('budget')) return;
-    if (section === 'budget' || section === 'cf-projection' || (section === 'analytics' && analyticsView === 'budget')) loadBudget();
-  }, [section, analyticsView, globalYear, disabledSections, loadBudget]);
+    if (section === 'budget' || (section === 'cashflow' && cfView === 'overview') || (section === 'analytics' && analyticsView === 'budget')) loadBudget();
+  }, [section, cfView, analyticsView, globalYear, disabledSections, loadBudget]);
 
   const loadBudgetEntries = useCallback(async () => {
     setBudgetEntriesLoading(true);
@@ -291,17 +292,17 @@ export default function App() {
 
   useEffect(() => {
     if (disabledSections.has('budget')) return;
-    if (section === 'budget' || section === 'cf-projection') {
+    if (section === 'budget' || (section === 'cashflow' && cfView === 'overview')) {
       loadBudgetEntries();
     }
-  }, [section, budgetView, globalYear, disabledSections, loadBudgetEntries]);
+  }, [section, cfView, budgetView, globalYear, disabledSections, loadBudgetEntries]);
 
   useEffect(() => {
     if (disabledSections.has('budget')) return;
-    if (section === 'cf-projection') {
+    if (section === 'cashflow' && cfView === 'overview') {
       getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null));
     }
-  }, [section, globalYear, disabledSections]);
+  }, [section, cfView, globalYear, disabledSections]);
 
   const loadElements = useCallback(async () => {
     setElementsLoading(true);
@@ -315,8 +316,8 @@ export default function App() {
   }, [pushToast]);
 
   useEffect(() => {
-    if (section === 'transactions' && txView === 'categories') loadElements();
-  }, [section, txView, loadElements]);
+    if (section === 'cashflow' && cfView === 'recipients') loadElements();
+  }, [section, cfView, loadElements]);
 
   const loadCfBudgetMap = useCallback(async () => {
     setCfBudgetMapLoading(true);
@@ -334,8 +335,8 @@ export default function App() {
   }, [globalYear, pushToast]);
 
   useEffect(() => {
-    if (section === 'transactions' && (txView === 'list' || txView === 'mapping')) loadCfBudgetMap();
-  }, [section, txView, loadCfBudgetMap]);
+    if (section === 'cashflow' && (cfView === 'transactions' || cfView === 'mapping')) loadCfBudgetMap();
+  }, [section, cfView, loadCfBudgetMap]);
 
   const loadCharts = useCallback(async () => {
     setChartsLoading(true);
@@ -462,13 +463,14 @@ export default function App() {
     getBudgetYears().then(setBudgetYears).catch(() => {});
     getTransactionYears().then(setTxYears).catch(() => {});
     getBudgetCategories(globalYear).then(setBudgetCategoriesList).catch(() => {});
-    if (section === 'transactions') {
-      if (txView === 'list') loadTransactions();
-      if (txView === 'cashflow') loadCashFlow();
-      if (txView === 'categories') loadElements();
+    if (section === 'cashflow') {
+      if (cfView === 'transactions') { loadTransactions(); loadCfBudgetMap(); }
+      if (cfView === 'lux-cashflow') loadCashFlow();
+      if (cfView === 'recipients') loadElements();
+      if (cfView === 'mapping') loadCfBudgetMap();
+      if (cfView === 'overview') { loadBudget(); loadBudgetEntries(); getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null)); }
     }
     if (section === 'budget') { loadBudget(); loadBudgetEntries(); }
-    if (section === 'cf-projection') { loadBudget(); loadBudgetEntries(); getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null)); }
     if (section === 'analytics') { loadCharts(); if (analyticsView === 'budget') loadBudget(); }
     if (section === 'activity') loadActivity();
   };
@@ -479,19 +481,24 @@ export default function App() {
       setShowSettings(true);
       return;
     }
-    if (target === 'cashflow') {
-      setSection('transactions');
-      setTxView('cashflow');
+    if (target === 'lux-cashflow') {
+      setSection('cashflow');
+      setCfView('lux-cashflow');
       return;
     }
-    setSection(target);
+    if (target === 'budget-entries') {
+      setSection('budget');
+      setBudgetView('entries');
+      return;
+    }
+    handleNavigateSection(target);
   };
 
   const handleNavigateSection = (sec) => {
     setSection(sec);
     // Reset sub-views to defaults
-    if (sec === 'transactions') setTxView('list');
-    if (sec === 'budget') { setBudgetView('overview'); setEntriesInitialMonth(undefined); setEntriesInitialCategory(undefined); }
+    if (sec === 'cashflow') setCfView('overview');
+    if (sec === 'budget') { setBudgetView('overview'); setEntriesInitialMonth(undefined); setEntriesInitialCategory(undefined); setEntriesInitialScenario('consuntivo'); }
     if (sec === 'analytics') setAnalyticsView('cashflow');
   };
 
@@ -499,16 +506,17 @@ export default function App() {
   useEffect(() => {
     const handler = (e) => {
       // Cmd+1-6 for section navigation
-      if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '6') {
+      if ((e.metaKey || e.ctrlKey) && e.key >= '1' && e.key <= '5') {
         e.preventDefault();
-        const sections = ['home', 'transactions', 'cf-projection', 'budget', 'analytics', 'activity'];
+        const sections = ['home', 'cashflow', 'budget', 'analytics', 'activity'];
         const idx = parseInt(e.key) - 1;
-        if (sections[idx]) setSection(sections[idx]);
+        if (sections[idx]) handleNavigateSection(sections[idx]);
       }
       // Cmd+N for new transaction
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
-        setSection('transactions');
+        setSection('cashflow');
+        setCfView('transactions');
         setShowForm(true);
       }
       // Escape closes drawers/modals
@@ -519,7 +527,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [showSettings, showForm]);
+  }, [showSettings, showForm, handleNavigateSection]);
 
   // ── Filter logic ──
   const normalize = (value) => String(value || '').toLowerCase();
@@ -623,7 +631,7 @@ export default function App() {
   }
 
   // ── Determine current sub-view for breadcrumb ──
-  const currentSubView = section === 'transactions' ? (txView !== 'list' ? txView : null) : section === 'budget' ? budgetView : section === 'analytics' ? analyticsView : null;
+  const currentSubView = section === 'cashflow' ? cfView : section === 'budget' ? budgetView : section === 'analytics' ? analyticsView : null;
 
   return (
     <>
@@ -684,7 +692,7 @@ export default function App() {
           <DashboardHome
             year={globalYear}
             onNavigate={handleNavigate}
-            onOpenNewTransaction={() => { setSection('transactions'); setShowForm(true); }}
+            onOpenNewTransaction={() => { setSection('cashflow'); setCfView('transactions'); setShowForm(true); }}
             onSyncCashFlow={async () => {
               try {
                 await syncAll(globalYear);
@@ -696,12 +704,47 @@ export default function App() {
           />
         )}
 
-        {/* ═══ TRANSACTIONS ═══ */}
-        {section === 'transactions' && (
+        {/* ═══ CASH FLOW ═══ */}
+        {section === 'cashflow' && (
           <div className="space-y-4">
-            <SubTabBar tabs={TX_SUB_TABS} active={txView} onChange={setTxView} />
+            <SubTabBar tabs={CF_SUB_TABS} active={cfView} onChange={setCfView} />
 
-            {txView === 'list' && (
+            {cfView === 'overview' && (
+              <>
+                {(budgetLoading || budgetEntriesLoading) && (
+                  <span className="text-sm text-on-surface-secondary flex items-center gap-2">
+                    <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Loading...
+                  </span>
+                )}
+                <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+                  <CashFlowProjection
+                    entries={budgetEntries}
+                    budget={budget}
+                    txConsuntivo={txBudgetSummary}
+                    onConsuntivoClick={(month, category) => {
+                      setEntriesInitialMonth(month || undefined);
+                      setEntriesInitialCategory(category || undefined);
+                      setEntriesInitialScenario('consuntivo');
+                      setBudgetView('entries');
+                      setSection('budget');
+                    }}
+                    onCertoEntryClick={(month, category) => {
+                      setEntriesInitialMonth(month || undefined);
+                      setEntriesInitialCategory(category || undefined);
+                      setEntriesInitialScenario(undefined);
+                      setBudgetView('entries');
+                      setSection('budget');
+                    }}
+                  />
+                </div>
+              </>
+            )}
+
+            {cfView === 'transactions' && (
               <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
                 {/* Toolbar */}
                 <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
@@ -788,6 +831,8 @@ export default function App() {
                       categories={categories}
                       elements={elements}
                       categoryHints={categoryHints}
+                      cfBudgetMap={cfBudgetMap}
+                      budgetCategories={budgetCategoriesList}
                       onSubmit={async (data) => {
                         const ok = await handleAddTransaction(data);
                         if (ok) setShowForm(false);
@@ -804,6 +849,7 @@ export default function App() {
                   elements={elements}
                   categoryHints={categoryHints}
                   cfBudgetMap={cfBudgetMap}
+                  budgetCategories={budgetCategoriesList}
                   onUpdate={handleUpdateTransaction}
                   onDelete={handleDeleteTransaction}
                   onToast={pushToast}
@@ -811,7 +857,7 @@ export default function App() {
               </div>
             )}
 
-            {txView === 'cashflow' && (
+            {cfView === 'lux-cashflow' && (
               <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
                 <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                   <div className="flex items-center gap-3 flex-wrap">
@@ -845,7 +891,7 @@ export default function App() {
               </div>
             )}
 
-            {txView === 'categories' && (
+            {cfView === 'recipients' && (
               <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
                 <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                   <div className="flex items-center gap-3 flex-wrap">
@@ -912,7 +958,7 @@ export default function App() {
               </div>
             )}
 
-            {txView === 'mapping' && (
+            {cfView === 'mapping' && (
               <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
                 <CategoryMapping
                   categories={categories}
@@ -952,15 +998,11 @@ export default function App() {
                   onConsuntivoClick={(month, category) => {
                     setEntriesInitialMonth(month || undefined);
                     setEntriesInitialCategory(category || undefined);
+                    setEntriesInitialScenario('consuntivo');
                     setBudgetView('entries');
                   }}
+                  onAddEntry={handleAddBudgetEntry}
                 />
-              </div>
-            )}
-
-            {budgetView === 'charts' && (
-              <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-                <BudgetCharts data={budget} year={globalYear} />
               </div>
             )}
 
@@ -972,6 +1014,7 @@ export default function App() {
                   budgetCategories={budget ? [
                     ...budget.costs.map((c) => ({ category: c.category, row: c.row, type: 'cost' })),
                     ...budget.revenues.map((c) => ({ category: c.category, row: c.row, type: 'revenue' })),
+                    ...(budget.financing || []).map((c) => ({ category: c.category, row: c.row, type: 'financing' })),
                   ] : []}
                   onAdd={handleAddBudgetEntry}
                   onUpdate={handleUpdateBudgetEntry}
@@ -981,28 +1024,10 @@ export default function App() {
                   seededScenarios={seededScenarios}
                   initialMonth={entriesInitialMonth}
                   initialCategory={entriesInitialCategory}
-                  initialScenario="consuntivo"
+                  initialScenario={entriesInitialScenario}
                 />
               </div>
             )}
-          </div>
-        )}
-
-        {/* ═══ CASH FLOW (CF Projection) ═══ */}
-        {section === 'cf-projection' && (
-          <div className="space-y-4">
-            {(budgetLoading || budgetEntriesLoading) && (
-              <span className="text-sm text-on-surface-secondary flex items-center gap-2">
-                <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Loading...
-              </span>
-            )}
-            <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-              <CashFlowProjection entries={budgetEntries} budget={budget} txConsuntivo={txBudgetSummary} />
-            </div>
           </div>
         )}
 

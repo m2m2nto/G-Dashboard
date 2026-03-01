@@ -28,6 +28,7 @@ export default function TransactionTable({
   elements,
   categoryHints,
   cfBudgetMap,
+  budgetCategories,
   onUpdate,
   onDelete,
   onToast,
@@ -55,7 +56,7 @@ export default function TransactionTable({
         <table className="min-w-full">
           <thead>
             <tr className="border-b border-surface-border bg-surface-dim">
-              {['Date', 'Type', 'Transaction', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Recipient', 'Budget', ''].map((h, i) => (
+              {['Date', 'Type', 'Recipient', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Lux CF Category', 'Budget Category', ''].map((h, i) => (
                 <th key={i} className={`px-3 py-2 text-left text-xs font-medium text-on-surface-secondary ${i === 0 ? 'sticky top-0 left-0 z-20' : 'sticky top-0 z-10'} bg-surface-dim ${i >= 5 && i <= 7 ? 'text-right' : ''}`}>{h}</th>
               ))}
             </tr>
@@ -104,6 +105,8 @@ export default function TransactionTable({
       outflow: tx.outflow ?? '',
       cashFlow: tx.cashFlow || '',
       comments: tx.comments || '',
+      budgetCategory: tx.budgetCategory || '',
+      budgetRow: tx.budgetRow ?? '',
     });
   };
 
@@ -126,10 +129,22 @@ export default function TransactionTable({
   };
 
   const handleChange = (field, value) => {
+    if (field === 'budgetCategory') {
+      const found = (budgetCategories || []).find((b) => b.category === value);
+      setEditData((prev) => ({ ...prev, budgetCategory: value, budgetRow: found ? found.row : '' }));
+      return;
+    }
     if (field === 'cashFlow') {
       cashFlowManual.current = true;
       setCfHighlight(false);
-      setEditData((prev) => ({ ...prev, cashFlow: value }));
+      // Auto-fill budget from mapping
+      const mapping = cfBudgetMap?.[value];
+      setEditData((prev) => ({
+        ...prev,
+        cashFlow: value,
+        budgetCategory: mapping?.budgetCategory || '',
+        budgetRow: mapping?.budgetRow ?? '',
+      }));
       return;
     }
     setEditData((prev) => {
@@ -140,6 +155,10 @@ export default function TransactionTable({
         const hint = lookupCategory(tx, notes);
         if (hint) {
           next.cashFlow = hint;
+          // Auto-fill budget from mapping
+          const mapping = cfBudgetMap?.[hint];
+          next.budgetCategory = mapping?.budgetCategory || '';
+          next.budgetRow = mapping?.budgetRow ?? '';
           flashCashFlow();
         }
       }
@@ -149,6 +168,8 @@ export default function TransactionTable({
         const isOutflow = Number(next.outflow) > 0;
         if ((isInflow && next.cashFlow.startsWith('C-')) || (isOutflow && next.cashFlow.startsWith('R-'))) {
           next.cashFlow = '';
+          next.budgetCategory = '';
+          next.budgetRow = '';
           cashFlowManual.current = false;
         }
       }
@@ -201,6 +222,19 @@ export default function TransactionTable({
       />
       <div className="overflow-x-auto">
         <table className="min-w-full">
+          <colgroup>
+            <col /> {/* Date */}
+            <col /> {/* Type */}
+            <col style={{ width: '300px' }} /> {/* Recipient — wide */}
+            <col style={{ width: '300px' }} /> {/* Notes — wide */}
+            <col style={{ width: '334px' }} /> {/* IBAN */}
+            <col /> {/* Inflow */}
+            <col /> {/* Outflow */}
+            <col /> {/* Balance */}
+            <col /> {/* Lux CF Category */}
+            <col style={{ width: '200px' }} /> {/* Budget — wide */}
+            <col /> {/* Actions */}
+          </colgroup>
           <thead>
             {/* Summary row */}
             <tr className="bg-surface-dim border-b border-surface-border">
@@ -216,14 +250,14 @@ export default function TransactionTable({
             <tr className="border-b border-surface-border bg-surface-dim">
               <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 left-0 z-20 bg-surface-dim">Date</th>
               <th className="px-3 py-2 text-center text-xs font-medium text-on-surface-secondary w-10 sticky top-0 z-10 bg-surface-dim">Type</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Transaction</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Recipient</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Notes</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">IBAN</th>
               <th className="px-3 py-2 text-right text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Inflow</th>
               <th className="px-3 py-2 text-right text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Outflow</th>
               <th className="px-3 py-2 text-right text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Balance</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Recipient</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Budget</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Lux CF Category</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-on-surface-secondary sticky top-0 z-10 bg-surface-dim">Budget Category</th>
               <th className="px-3 py-2 w-24 sticky top-0 z-10 bg-surface-dim"></th>
             </tr>
           </thead>
@@ -298,8 +332,24 @@ export default function TransactionTable({
                         );
                       })()}
                     </td>
-                    <td className="px-3 py-1.5 text-xs text-on-surface-tertiary">
-                      {editData.cashFlow && cfBudgetMap?.[editData.cashFlow]?.budgetCategory || ''}
+                    <td className="px-2 py-1.5">
+                      <select
+                        value={editData.budgetCategory}
+                        onChange={(e) => handleChange('budgetCategory', e.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">-- Select --</option>
+                        <optgroup label="Costs">
+                          {(budgetCategories || []).filter((b) => b.type === 'cost').map((b) => (
+                            <option key={b.row} value={b.category}>{b.category}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Revenues">
+                          {(budgetCategories || []).filter((b) => b.type === 'revenue').map((b) => (
+                            <option key={b.row} value={b.category}>{b.category}</option>
+                          ))}
+                        </optgroup>
+                      </select>
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <div className="flex items-center gap-1">
@@ -334,7 +384,7 @@ export default function TransactionTable({
                   <td className="px-3 py-2 text-sm text-center text-on-surface-secondary">{tx.type || ''}</td>
                   <td className="px-3 py-2 text-sm font-medium text-on-surface">{tx.transaction}</td>
                   <td className="px-3 py-2 text-sm text-on-surface-secondary">{tx.notes || ''}</td>
-                  <td className="px-3 py-2 text-xs text-on-surface-tertiary font-mono">{tx.iban || ''}</td>
+                  <td className="px-3 py-2 text-xs text-on-surface-tertiary font-mono">{tx.iban ? tx.iban.replace(/(.{4})/g, '$1 ').trim() : ''}</td>
                   <td className="px-3 py-2 text-sm text-right text-status-positive">{tx.inflow ? '+' + fmt(tx.inflow) : '-'}</td>
                   <td className="px-3 py-2 text-sm text-right text-status-negative">{tx.outflow ? '-' + fmt(tx.outflow) : '-'}</td>
                   <td className={`px-3 py-2 text-sm text-right font-mono font-medium ${balanceColor(tx.balance)}`}>{tx.balance != null ? fmt(tx.balance) : ''}</td>
@@ -347,7 +397,7 @@ export default function TransactionTable({
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs text-on-surface-tertiary">
-                    {tx.cashFlow && cfBudgetMap?.[tx.cashFlow]?.budgetCategory || ''}
+                    {tx.budgetCategory || ''}
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap text-right">
                     <span className="inline-flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

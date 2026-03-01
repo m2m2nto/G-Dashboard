@@ -10,7 +10,7 @@ function parseEU(str) {
   return isNaN(n) ? 0 : n;
 }
 
-export default function TransactionForm({ categories, elements, categoryHints, onSubmit, submitting }) {
+export default function TransactionForm({ categories, elements, categoryHints, cfBudgetMap, budgetCategories, onSubmit, submitting }) {
   const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 10);
@@ -23,6 +23,8 @@ export default function TransactionForm({ categories, elements, categoryHints, o
     inflow: '',
     outflow: '',
     cashFlow: '',
+    budgetCategory: '',
+    budgetRow: '',
   });
   const [errors, setErrors] = useState({});
   const cashFlowManual = useRef(false);
@@ -57,10 +59,22 @@ export default function TransactionForm({ categories, elements, categoryHints, o
   const handleChange = (e) => {
     const { name, value } = e.target;
 
+    if (name === 'budgetCategory') {
+      const found = (budgetCategories || []).find((b) => b.category === value);
+      setForm((f) => ({ ...f, budgetCategory: value, budgetRow: found ? found.row : '' }));
+      return;
+    }
+
     if (name === 'cashFlow') {
       cashFlowManual.current = true;
       setCfHighlight(false);
-      setForm((f) => ({ ...f, cashFlow: value }));
+      const mapping = cfBudgetMap?.[value];
+      setForm((f) => ({
+        ...f,
+        cashFlow: value,
+        budgetCategory: mapping?.budgetCategory || '',
+        budgetRow: mapping?.budgetRow ?? '',
+      }));
       return;
     }
 
@@ -70,6 +84,9 @@ export default function TransactionForm({ categories, elements, categoryHints, o
         const hint = lookupCategory(next.transaction, next.notes);
         if (hint) {
           next.cashFlow = hint;
+          const mapping = cfBudgetMap?.[hint];
+          next.budgetCategory = mapping?.budgetCategory || '';
+          next.budgetRow = mapping?.budgetRow ?? '';
           flashCashFlow();
         }
       }
@@ -79,6 +96,8 @@ export default function TransactionForm({ categories, elements, categoryHints, o
         const isOutflow = parseEU(next.outflow) > 0;
         if ((isInflow && next.cashFlow.startsWith('C-')) || (isOutflow && next.cashFlow.startsWith('R-'))) {
           next.cashFlow = '';
+          next.budgetCategory = '';
+          next.budgetRow = '';
           cashFlowManual.current = false;
         }
       }
@@ -98,8 +117,16 @@ export default function TransactionForm({ categories, elements, categoryHints, o
   const handleTransactionSelect = (name) => {
     setForm((f) => {
       const newCashFlow = tryAutoFillCategory(name, f.notes, f.cashFlow);
-      if (newCashFlow !== f.cashFlow && !cashFlowManual.current) flashCashFlow();
-      return { ...f, transaction: name, cashFlow: newCashFlow };
+      const changed = newCashFlow !== f.cashFlow && !cashFlowManual.current;
+      if (changed) flashCashFlow();
+      const mapping = changed && newCashFlow ? cfBudgetMap?.[newCashFlow] : null;
+      return {
+        ...f,
+        transaction: name,
+        cashFlow: newCashFlow,
+        budgetCategory: mapping ? mapping.budgetCategory || '' : f.budgetCategory,
+        budgetRow: mapping ? mapping.budgetRow ?? '' : f.budgetRow,
+      };
     });
     if (errors.transaction) {
       setErrors((prev) => {
@@ -149,6 +176,8 @@ export default function TransactionForm({ categories, elements, categoryHints, o
       inflow: '',
       outflow: '',
       cashFlow: '',
+      budgetCategory: '',
+      budgetRow: '',
     }));
   };
 
@@ -179,7 +208,7 @@ export default function TransactionForm({ categories, elements, categoryHints, o
           </select>
         </div>
         <div className="col-span-2">
-          <label className="block text-xs font-medium text-on-surface-secondary mb-1">Transaction</label>
+          <label className="block text-xs font-medium text-on-surface-secondary mb-1">Recipient</label>
           <SearchableSelect
             value={form.transaction}
             options={elements}
@@ -226,7 +255,7 @@ export default function TransactionForm({ categories, elements, categoryHints, o
         </div>
         <div className="col-span-2">
           <label className="block text-xs font-medium text-on-surface-secondary mb-1">
-            Cash flow category
+            Lux CF category
             {cfHighlight && <span className="ml-2 text-primary animate-pulse">auto-suggested</span>}
           </label>
           <select
@@ -267,6 +296,27 @@ export default function TransactionForm({ categories, elements, categoryHints, o
                 : 'Outflow requires a Cost (C-) category.')}
             </p>
           )}
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-on-surface-secondary mb-1">Budget category</label>
+          <select
+            name="budgetCategory"
+            value={form.budgetCategory}
+            onChange={handleChange}
+            className={inputClass}
+          >
+            <option value="">-- Select --</option>
+            <optgroup label="Costs">
+              {(budgetCategories || []).filter((b) => b.type === 'cost').map((b) => (
+                <option key={b.row} value={b.category}>{b.category}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Revenues">
+              {(budgetCategories || []).filter((b) => b.type === 'revenue').map((b) => (
+                <option key={b.row} value={b.category}>{b.category}</option>
+              ))}
+            </optgroup>
+          </select>
         </div>
       </div>
 

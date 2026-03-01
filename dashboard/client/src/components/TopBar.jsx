@@ -4,20 +4,19 @@ import { BUTTON_ICON } from '../ui.js';
 
 const SECTION_LABELS = {
   home: 'Home',
-  transactions: 'Transactions',
+  cashflow: 'Cash Flow',
   budget: 'Budget',
-  'cf-projection': 'Cash Flow',
   analytics: 'Analytics',
   activity: 'Activity',
 };
 
 const SUB_VIEW_LABELS = {
-  cashflow: 'Lux Cash Flow',
-  categories: 'Recipients',
-  mapping: 'Mapping',
   overview: 'Overview',
+  transactions: 'Transactions',
+  'lux-cashflow': 'Lux Cash Flow',
+  recipients: 'Recipients',
+  mapping: 'Mapping',
   charts: 'Charts',
-  projection: 'CF Projection',
   entries: 'Entries',
   budget: 'Budget',
 };
@@ -39,7 +38,7 @@ export default function TopBar({
 }) {
   const sectionLabel = SECTION_LABELS[section] || section;
   const subLabel = SUB_VIEW_LABELS[subView];
-  const showBreadcrumb = subLabel && (section === 'budget' || section === 'transactions' || section === 'analytics');
+  const showBreadcrumb = subLabel && (section === 'cashflow' || section === 'budget' || section === 'analytics');
 
   return (
     <header className={`h-14 bg-white border-b border-surface-border sticky ${isElectron ? 'top-[38px]' : 'top-0'} z-20 flex items-center px-4 gap-3`}>

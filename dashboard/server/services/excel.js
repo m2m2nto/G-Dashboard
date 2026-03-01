@@ -1898,25 +1898,7 @@ export function updateBudgetConsuntivoBatch(year, aggregation) {
     const sheetPath = await resolveBudgetSheetPath(zip, sheetName);
     let sheetXml = await zip.file(sheetPath).async('string');
 
-    // Build list of data rows (cost + revenue, skip formula rows)
-    const allRows = [];
-    for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
-      if (!formulaRows.includes(r)) allRows.push(r);
-    }
-    for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
-      if (!formulaRows.includes(r)) allRows.push(r);
-    }
-
-    // Zero out all consuntivo cells
-    for (const r of allRows) {
-      for (let mi = 0; mi < 12; mi++) {
-        const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + 3;
-        const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
-        sheetXml = xmlSetCell(sheetXml, cellRef, 0);
-      }
-    }
-
-    // Write aggregated values
+    // Write only cells that have entry aggregations — preserve Excel master data elsewhere
     for (const [key, amount] of aggregation) {
       const [rowStr, miStr] = key.split('-');
       const r = Number(rowStr);
@@ -1955,29 +1937,11 @@ export function updateBudgetScenarioBatch(year, scenario, aggregation) {
     const fileBuf = await readFile(filePath);
     const zip = await JSZip.loadAsync(fileBuf);
 
-    // Build list of data rows (cost + revenue, skip formula rows)
-    const allRows = [];
-    for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
-      if (!formulaRows.includes(r)) allRows.push(r);
-    }
-    for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
-      if (!formulaRows.includes(r)) allRows.push(r);
-    }
-
-    // --- Scenario sheet ---
+    // --- Scenario sheet --- write only cells with entry aggregations
     const scenarioSheetName = BUDGET_SHEET_NAMES[scenario](Number(year));
     const scenarioSheetPath = await resolveBudgetSheetPath(zip, scenarioSheetName);
     let scenarioXml = await zip.file(scenarioSheetPath).async('string');
 
-    // Zero out all data cells in scenario sheet (cols C–N, rows 3–14 & 19–23)
-    for (const r of allRows) {
-      for (let mi = 0; mi < 12; mi++) {
-        const col = BUDGET_SCENARIO_MONTH_START_COL + mi; // C(3)..N(14)
-        const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
-        scenarioXml = xmlSetCell(scenarioXml, cellRef, 0);
-      }
-    }
-    // Write aggregated values to scenario sheet
     for (const [key, amount] of aggregation) {
       const [rowStr, miStr] = key.split('-');
       const r = Number(rowStr);
@@ -1989,20 +1953,11 @@ export function updateBudgetScenarioBatch(year, scenario, aggregation) {
     }
     zip.file(scenarioSheetPath, scenarioXml);
 
-    // --- Generale sheet ---
+    // --- Generale sheet --- write only cells with entry aggregations
     const generaleSheetName = BUDGET_SHEET_NAMES.generale(Number(year));
     const generaleSheetPath = await resolveBudgetSheetPath(zip, generaleSheetName);
     let generaleXml = await zip.file(generaleSheetPath).async('string');
 
-    // Zero out scenario column in generale sheet
-    for (const r of allRows) {
-      for (let mi = 0; mi < 12; mi++) {
-        const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + scenarioOffset;
-        const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
-        generaleXml = xmlSetCell(generaleXml, cellRef, 0);
-      }
-    }
-    // Write aggregated values to generale sheet
     for (const [key, amount] of aggregation) {
       const [rowStr, miStr] = key.split('-');
       const r = Number(rowStr);

@@ -135,21 +135,21 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
           value={metrics?.revenue}
           icon="trending_up"
           subtitle="year to date"
-          onClick={() => onNavigate('cashflow')}
+          onClick={() => onNavigate('lux-cashflow')}
         />
         <MetricCard
           title="Costs (YTD)"
           value={metrics?.costs}
           icon="trending_down"
           subtitle="year to date"
-          onClick={() => onNavigate('cashflow')}
+          onClick={() => onNavigate('lux-cashflow')}
         />
         <MetricCard
           title="Operating Margin"
           value={metrics?.margin}
           icon="account_balance"
           trend={metrics?.revenue ? ((metrics.margin / metrics.revenue) * 100) : null}
-          onClick={() => onNavigate('cashflow')}
+          onClick={() => onNavigate('lux-cashflow')}
         />
         <MetricCard
           title="Budget Variance"
@@ -223,11 +223,11 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
               Sync Cash Flow
             </button>
             <button
-              onClick={() => onNavigate('budget')}
+              onClick={() => onNavigate('budget-entries')}
               className={`${BUTTON_NEUTRAL} w-full justify-center`}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>account_balance</span>
-              View Budget
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>edit_note</span>
+              Add New Entry
             </button>
             <button
               onClick={() => onNavigate('analytics')}

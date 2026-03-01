@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getBudgetScenario } from '../api.js';
-import { BUTTON_GHOST, BUTTON_PILL_BASE } from '../ui.js';
+import { BUTTON_GHOST, BUTTON_PILL_BASE, BUTTON_PRIMARY, CONTROL_COMPACT } from '../ui.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
 const SCENARIOS = ['certo', 'possibile', 'ottimistico'];
@@ -69,7 +69,7 @@ function BudgetSkeleton() {
 // Annual Summary View
 // ---------------------------------------------------------------------------
 
-function AnnualSummary({ data, onConsuntivoClick }) {
+function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
   const [expandedRow, setExpandedRow] = useState(null);
 
   const colSpan = 7; // category + 5 scenario columns + 1 for diff
@@ -120,7 +120,7 @@ function AnnualSummary({ data, onConsuntivoClick }) {
           {isExpanded && (
             <tr>
               <td colSpan={colSpan} className="p-0">
-                <MonthlyDrillDown row={row} isCost={isCost} onClose={() => setExpandedRow(null)} onConsuntivoClick={onConsuntivoClick} />
+                <MonthlyDrillDown row={row} isCost={isCost} year={year} onClose={() => setExpandedRow(null)} onConsuntivoClick={onConsuntivoClick} onAddEntry={onAddEntry} />
               </td>
             </tr>
           )}
@@ -222,7 +222,14 @@ function AnnualSummary({ data, onConsuntivoClick }) {
 }
 
 // Expanded monthly breakdown for a single category row
-function MonthlyDrillDown({ row, isCost, onClose, onConsuntivoClick }) {
+function MonthlyDrillDown({ row, isCost, year, onClose, onConsuntivoClick, onAddEntry }) {
+  const [addingMonth, setAddingMonth] = useState(null); // Italian month abbrev or null
+
+  const monthDate = (m) => {
+    const idx = MONTHS.indexOf(m);
+    return `${year}-${String(idx + 1).padStart(2, '0')}-01`;
+  };
+
   return (
     <div className="mx-4 my-2 bg-white rounded-xl shadow-elevation-1 p-4">
       <div className="flex justify-between items-center mb-2">
@@ -246,31 +253,60 @@ function MonthlyDrillDown({ row, isCost, onClose, onConsuntivoClick }) {
           </thead>
           <tbody className="divide-y divide-surface-border">
             {MONTHS.map((m) => (
-              <tr key={m} className="hover:bg-surface-dim/50 transition-colors">
-                <td className="px-2 py-1.5 text-xs font-medium text-on-surface-secondary">{m}</td>
-                {FIELDS.map((f) => {
-                  const v = f === 'diff' ? -row.months[m][f] : row.months[m][f];
-                  if (f === 'consuntivo') {
+              <React.Fragment key={m}>
+                <tr className="hover:bg-surface-dim/50 transition-colors group">
+                  <td className="px-2 py-1.5 text-xs font-medium text-on-surface-secondary">
+                    <span className="flex items-center gap-1">
+                      {m}
+                      {onAddEntry && (
+                        <button
+                          onClick={() => setAddingMonth(addingMonth === m ? null : m)}
+                          className="opacity-0 group-hover:opacity-100 hover:!opacity-100 text-primary hover:text-primary-hover transition-opacity"
+                          title={`Add consuntivo entry for ${m}`}
+                          style={{ opacity: addingMonth === m ? 1 : undefined }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>{addingMonth === m ? 'close' : 'add_circle'}</span>
+                        </button>
+                      )}
+                    </span>
+                  </td>
+                  {FIELDS.map((f) => {
+                    const v = f === 'diff' ? -row.months[m][f] : row.months[m][f];
+                    if (f === 'consuntivo') {
+                      return (
+                        <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
+                          <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category)} />
+                        </td>
+                      );
+                    }
                     return (
-                      <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
-                        <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category)} />
+                      <td
+                        key={f}
+                        className={`px-2 py-1.5 text-right text-xs tabular-nums ${
+                          f === 'diff' ? `border-l border-surface-border ${diffColor(v, isCost)}` : ''
+                        }`}
+                      >
+                        {f === 'diff' && v !== 0
+                          ? (v > 0 ? '+' : '') + fmt(v)
+                          : fmt(v)}
                       </td>
                     );
-                  }
-                  return (
-                    <td
-                      key={f}
-                      className={`px-2 py-1.5 text-right text-xs tabular-nums ${
-                        f === 'diff' ? `border-l border-surface-border ${diffColor(v, isCost)}` : ''
-                      }`}
-                    >
-                      {f === 'diff' && v !== 0
-                        ? (v > 0 ? '+' : '') + fmt(v)
-                        : fmt(v)}
-                    </td>
-                  );
-                })}
-              </tr>
+                  })}
+                </tr>
+                {addingMonth === m && (
+                  <InlineEntryForm
+                    category={row.category}
+                    budgetRow={row.row}
+                    scenario="consuntivo"
+                    initialDate={monthDate(m)}
+                    onAdd={async (entry) => {
+                      await onAddEntry(entry);
+                      setAddingMonth(null);
+                    }}
+                    onClose={() => setAddingMonth(null)}
+                  />
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -280,13 +316,97 @@ function MonthlyDrillDown({ row, isCost, onClose, onConsuntivoClick }) {
 }
 
 // ---------------------------------------------------------------------------
+// Inline Entry Form (for Monthly Detail)
+// ---------------------------------------------------------------------------
+
+const PAYMENT_OPTIONS = [
+  { value: 'inMonth', label: 'In month' },
+  { value: '30days', label: '30 days' },
+  { value: '60days', label: '60 days' },
+];
+
+function InlineEntryForm({ category, budgetRow, scenario, onAdd, onClose, initialDate }) {
+  const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+  const defaultDate = initialDate || todayLocal;
+  const [form, setForm] = useState({ date: defaultDate, description: '', amount: '', payment: 'inMonth', notes: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const descRef = useRef(null);
+
+  useEffect(() => { descRef.current?.focus(); }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.date || !form.description.trim() || !form.amount) return;
+    setSubmitting(true);
+    try {
+      await onAdd({
+        date: form.date,
+        description: form.description.trim(),
+        category,
+        budgetRow,
+        amount: Number(String(form.amount).replace(',', '.')),
+        payment: form.payment,
+        notes: form.notes,
+        scenario,
+      });
+      setForm({ date: defaultDate, description: '', amount: '', payment: 'inMonth', notes: '' });
+      descRef.current?.focus();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inputClass = `${CONTROL_COMPACT} text-xs`;
+
+  return (
+    <tr>
+      <td colSpan={MONTHS.length + 3} className="p-0">
+        <form onSubmit={handleSubmit} className="px-4 py-2 bg-primary-light/30 border-y border-primary/10 flex items-end gap-2 flex-wrap">
+          <div>
+            <label className="block text-[10px] font-medium text-on-surface-tertiary mb-0.5">Date</label>
+            <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className={`${inputClass} w-28`} required />
+          </div>
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-[10px] font-medium text-on-surface-tertiary mb-0.5">Description</label>
+            <input ref={descRef} type="text" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className={`${inputClass} w-full`} placeholder="Description..." required />
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-on-surface-tertiary mb-0.5">Amount (€)</label>
+            <input type="text" inputMode="decimal" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className={`${inputClass} w-24 text-right`} placeholder="0,00" required />
+          </div>
+          <div>
+            <label className="block text-[10px] font-medium text-on-surface-tertiary mb-0.5">Payment</label>
+            <select value={form.payment} onChange={(e) => setForm((f) => ({ ...f, payment: e.target.value }))} className={`${inputClass} w-24`}>
+              {PAYMENT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[100px]">
+            <label className="block text-[10px] font-medium text-on-surface-tertiary mb-0.5">Notes</label>
+            <input type="text" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} className={`${inputClass} w-full`} placeholder="Optional..." />
+          </div>
+          <button type="submit" disabled={submitting} className={`${BUTTON_PRIMARY} text-xs py-1 px-3`}>
+            {submitting ? '...' : 'Add'}
+          </button>
+          <button type="button" onClick={onClose} className={`${BUTTON_GHOST} text-xs py-1 px-2`}>
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+          </button>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Monthly Detail View
 // ---------------------------------------------------------------------------
 
-function MonthlyDetail({ data, year, onConsuntivoClick }) {
+function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
   const [scenario, setScenario] = useState('possibile');
   const [scenarioData, setScenarioData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [addingRow, setAddingRow] = useState(null); // { category, budgetRow }
 
   const loadScenario = useCallback(async () => {
     setLoading(true);
@@ -317,15 +437,28 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
   const renderCategoryRows = (rows, isCost) =>
     rows.map((row) => {
       const sRow = scenarioMap[row.row];
+      const isAdding = addingRow && addingRow.category === row.category;
       return (
-        <tbody key={row.category} className="border-b border-surface-border">
+        <tbody key={row.category} className="border-b border-surface-border group">
           {/* B (budget from scenario) */}
           <tr className="hover:bg-surface-dim/50 transition-colors">
             <td
               rowSpan={3}
               className="px-3 py-1 text-sm border-r border-surface-border whitespace-nowrap text-on-surface sticky left-0 z-10 bg-white align-middle"
             >
-              {row.category}
+              <span className="flex items-center gap-1">
+                {row.category}
+                {onAddEntry && (
+                  <button
+                    onClick={() => setAddingRow(isAdding ? null : { category: row.category, budgetRow: row.row })}
+                    className="opacity-0 group-hover:opacity-100 hover:!opacity-100 text-primary hover:text-primary-hover transition-opacity ml-1"
+                    title="Add entry"
+                    style={{ opacity: isAdding ? 1 : undefined }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{isAdding ? 'close' : 'add_circle'}</span>
+                  </button>
+                )}
+              </span>
             </td>
             <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">B</td>
             {MONTHS.map((m) => (
@@ -375,6 +508,18 @@ function MonthlyDetail({ data, year, onConsuntivoClick }) {
               })()}
             </td>
           </tr>
+          {isAdding && (
+            <InlineEntryForm
+              category={row.category}
+              budgetRow={row.row}
+              scenario="consuntivo"
+              onAdd={async (entry) => {
+                await onAddEntry(entry);
+                setAddingRow(null);
+              }}
+              onClose={() => setAddingRow(null)}
+            />
+          )}
         </tbody>
       );
     });
@@ -494,7 +639,7 @@ const BUDGET_MARGIN_ROW_FE = 27;
 // Main BudgetGrid
 // ---------------------------------------------------------------------------
 
-export default function BudgetGrid({ data, year, onConsuntivoClick }) {
+export default function BudgetGrid({ data, year, onConsuntivoClick, onAddEntry }) {
   const [view, setView] = useState('annual');
   const handleClick = onConsuntivoClick || (() => {});
 
@@ -526,8 +671,8 @@ export default function BudgetGrid({ data, year, onConsuntivoClick }) {
         </button>
       </div>
 
-      {view === 'annual' && <AnnualSummary data={data} onConsuntivoClick={handleClick} />}
-      {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={handleClick} />}
+      {view === 'annual' && <AnnualSummary data={data} year={year} onConsuntivoClick={handleClick} onAddEntry={onAddEntry} />}
+      {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={handleClick} onAddEntry={onAddEntry} />}
     </div>
   );
 }

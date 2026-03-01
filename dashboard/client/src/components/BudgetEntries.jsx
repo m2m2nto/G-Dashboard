@@ -29,6 +29,12 @@ function monthFromDate(dateStr) {
   return MONTHS[m] || null;
 }
 
+function fmtDate(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 const PAYMENT_OPTIONS = [
   { value: 'inMonth', label: 'In month' },
   { value: '30days', label: '30 days' },
@@ -64,6 +70,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
 
   const costs = budgetCategories.filter((c) => c.type === 'cost');
   const revenues = budgetCategories.filter((c) => c.type === 'revenue');
+  const financing = budgetCategories.filter((c) => c.type === 'financing');
 
   // When category changes, auto-set budgetRow
   const handleCategoryChange = (category, setter) => {
@@ -149,6 +156,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
   if (monthFilter) filtered = filtered.filter((e) => monthFromDate(e.date) === monthFilter);
   if (categoryFilter) filtered = filtered.filter((e) => e.category === categoryFilter);
   if (scenarioFilter) filtered = filtered.filter((e) => (e.scenario || 'consuntivo') === scenarioFilter);
+  filtered = [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
   const CategorySelect = ({ value, onChange, id }) => (
     <select
@@ -168,6 +176,13 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
           <option key={c.row} value={c.category}>{c.category}</option>
         ))}
       </optgroup>
+      {financing.length > 0 && (
+        <optgroup label="Financing">
+          {financing.map((c) => (
+            <option key={c.row} value={c.category}>{c.category}</option>
+          ))}
+        </optgroup>
+      )}
     </select>
   );
 
@@ -355,6 +370,13 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                 <option key={c.row} value={c.category}>{c.category}</option>
               ))}
             </optgroup>
+            {financing.length > 0 && (
+              <optgroup label="Financing">
+                {financing.map((c) => (
+                  <option key={c.row} value={c.category}>{c.category}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </div>
         {hasActiveFilters && (
@@ -484,7 +506,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                       {(entry.scenario || 'consuntivo').charAt(0).toUpperCase() + (entry.scenario || 'consuntivo').slice(1)}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-xs tabular-nums">{entry.date}</td>
+                  <td className="px-3 py-2 text-xs tabular-nums">{fmtDate(entry.date)}</td>
                   <td className="px-3 py-2 text-center text-xs font-medium text-on-surface-secondary">{monthFromDate(entry.date)}</td>
                   <td className="px-3 py-2 text-sm text-on-surface">{entry.description}</td>
                   <td className="px-3 py-2 text-xs text-on-surface-secondary">{entry.category}</td>

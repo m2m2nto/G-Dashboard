@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { readTransactions, addTransaction, updateTransaction, deleteTransaction, syncCashFlow, compactTable } from '../services/excel.js';
 import { MONTHS, CATEGORY_TO_CF_ROW, listBankingYears } from '../config.js';
 import { appendEntry } from '../services/audit.js';
-import { shiftMappingsOnCompact } from '../services/budgetCategoryMap.js';
+import { shiftMappingsOnCompact, getMappingsForMonth, setMapping, deleteMapping } from '../services/budgetCategoryMap.js';
 import { readCfBudgetMap } from '../services/cfBudgetCategoryMap.js';
 
 const router = Router();
@@ -34,6 +34,8 @@ export function validateTransactionPayload(body, { partial }) {
     outflow: normalizeNumber(body.outflow),
     cashFlow: normalizeString(body.cashFlow),
     comments: normalizeString(body.comments),
+    budgetCategory: normalizeString(body.budgetCategory),
+    budgetRow: body.budgetRow != null ? Number(body.budgetRow) : undefined,
   };
   if (cleaned.iban) {
     cleaned.iban = cleaned.iban.replace(/\s+/g, '').toUpperCase();
@@ -163,7 +165,22 @@ router.get('/:year/:month', async (req, res) => {
     return res.status(400).json({ error: `Invalid month: ${month}` });
   }
   try {
-    const rows = await readTransactions(month, year);
+    const [rows, txBudgetMap, cfBudgetMap] = await Promise.all([
+      readTransactions(month, year),
+      getMappingsForMonth(year, month),
+      readCfBudgetMap(),
+    ]);
+    // Attach budgetCategory: per-tx override first, then CF→Budget mapping fallback
+    for (const tx of rows) {
+      const override = txBudgetMap[tx.row];
+      if (override) {
+        tx.budgetCategory = override.category;
+        tx.budgetRow = override.budgetRow;
+      } else if (tx.cashFlow && cfBudgetMap[tx.cashFlow]) {
+        tx.budgetCategory = cfBudgetMap[tx.cashFlow].budgetCategory;
+        tx.budgetRow = cfBudgetMap[tx.cashFlow].budgetRow;
+      }
+    }
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -181,6 +198,10 @@ router.post('/:year/:month', async (req, res) => {
   const month = MONTHS[parseInt(dateMonthNum, 10) - 1];
   try {
     const result = await addTransaction(month, cleaned, year);
+    // Save per-transaction budget mapping if provided
+    if (cleaned.budgetCategory && cleaned.budgetRow != null) {
+      await setMapping(year, month, result.row, cleaned.budgetCategory, cleaned.budgetRow).catch(() => {});
+    }
     await syncCashFlow(month, year).catch((err) => console.error('Cash flow sync failed:', err.message));
     appendEntry({ action: 'transaction.add', year, month, details: cleaned }).catch(() => {});
     res.json({ ...result, year, month });
@@ -207,6 +228,14 @@ router.put('/:year/:month/:row', async (req, res) => {
     const rows = await readTransactions(month, year);
     const before = rows.find((r) => r.row === row);
     const result = await updateTransaction(month, row, cleaned, year);
+    // Save per-transaction budget mapping if provided
+    if (cleaned.budgetCategory !== undefined) {
+      if (cleaned.budgetCategory && cleaned.budgetRow != null) {
+        await setMapping(year, month, row, cleaned.budgetCategory, cleaned.budgetRow).catch(() => {});
+      } else if (!cleaned.budgetCategory) {
+        await deleteMapping(year, month, row).catch(() => {});
+      }
+    }
     await syncCashFlow(month, year).catch((err) => console.error('Cash flow sync failed:', err.message));
     if (before) {
       const changes = {};

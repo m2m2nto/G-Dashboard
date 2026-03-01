@@ -170,14 +170,18 @@ export default function CashFlowGrid({ data, showYoY = true, year }) {
             {MONTHS.map((m) => {
               const val = row.months[m];
               return (
-                <td
-                  key={m}
-                  className={`px-2 py-1.5 text-right text-sm cursor-pointer hover:bg-primary-light transition-colors ${
-                    val ? 'text-on-surface' : 'text-on-surface-tertiary'
-                  }`}
-                  onClick={() => handleCellClick(m, row.category, type)}
-                >
-                  {fmt(val)}
+                <td key={m} className="px-2 py-1.5 text-right text-sm">
+                  {val ? (
+                    <button
+                      onClick={() => handleCellClick(m, row.category, type)}
+                      className="text-primary hover:text-primary-hover hover:underline underline-offset-2 tabular-nums cursor-pointer"
+                      title="View transactions"
+                    >
+                      {fmt(val)}
+                    </button>
+                  ) : (
+                    <span className="text-on-surface-tertiary">{fmt(val)}</span>
+                  )}
                 </td>
               );
             })}
