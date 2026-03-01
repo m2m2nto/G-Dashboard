@@ -334,7 +334,7 @@ export default function App() {
   }, [globalYear, pushToast]);
 
   useEffect(() => {
-    if (section === 'transactions' && txView === 'mapping') loadCfBudgetMap();
+    if (section === 'transactions' && (txView === 'list' || txView === 'mapping')) loadCfBudgetMap();
   }, [section, txView, loadCfBudgetMap]);
 
   const loadCharts = useCallback(async () => {
@@ -803,6 +803,7 @@ export default function App() {
                   categories={categories}
                   elements={elements}
                   categoryHints={categoryHints}
+                  cfBudgetMap={cfBudgetMap}
                   onUpdate={handleUpdateTransaction}
                   onDelete={handleDeleteTransaction}
                   onToast={pushToast}
