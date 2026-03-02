@@ -99,7 +99,7 @@ function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
               if (f === 'consuntivo') {
                 return (
                   <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
-                    <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category)} />
+                    <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category, row.annual.consuntivo)} />
                   </td>
                 );
               }
@@ -275,7 +275,7 @@ function MonthlyDrillDown({ row, isCost, year, onClose, onConsuntivoClick, onAdd
                     if (f === 'consuntivo') {
                       return (
                         <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
-                          <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category)} />
+                          <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category, row.months[m].consuntivo)} />
                         </td>
                       );
                     }
@@ -475,11 +475,11 @@ function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
             <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">A</td>
             {MONTHS.map((m) => (
               <td key={m} className="px-1 py-0.5 text-right text-xs tabular-nums">
-                <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category)} />
+                <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category, row.months[m].consuntivo)} />
               </td>
             ))}
             <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
-              <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category)} />
+              <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category, row.annual.consuntivo)} />
             </td>
           </tr>
           {/* Δ (diff: possibile - consuntivo) */}

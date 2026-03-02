@@ -16,26 +16,13 @@ function fmt(v) {
   return Number(v).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 }
 
-function ConsuntivoLink({ value, onClick }) {
+function ValueLink({ value, onClick }) {
   if (value == null || value === 0) return <span>{fmt(value)}</span>;
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className="text-primary hover:text-primary-hover hover:underline underline-offset-2 tabular-nums cursor-pointer"
-      title="View entries"
-    >
-      {fmt(value)}
-    </button>
-  );
-}
-
-function CertoEntryLink({ value, onClick }) {
-  if (value == null || value === 0) return <span>{fmt(value)}</span>;
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className="text-accent hover:text-accent-hover hover:underline underline-offset-2 tabular-nums cursor-pointer"
-      title="Value from budget entries"
+      title="View details"
     >
       {fmt(value)}
     </button>
@@ -74,11 +61,10 @@ function buildProjection(entries, budget, txConsuntivo) {
     for (const f of (budget.financing || [])) categoryMap.set(f.row, { category: f.category, type: 'financing' });
   }
 
-  // Aggregate all scenarios
+  // Aggregate scenario entries (certo, possibile, ottimistico)
   const scenarioData = {};
-  for (const s of [...SCENARIOS, 'consuntivo']) {
+  for (const s of SCENARIOS) {
     scenarioData[s] = aggregateScenario(entries, s);
-    // Auto-register categories from entries
     for (const row of scenarioData[s].keys()) {
       if (!categoryMap.has(row)) {
         const entry = entries.find((e) => e.budgetRow === row);
@@ -88,17 +74,30 @@ function buildProjection(entries, budget, txConsuntivo) {
     }
   }
 
-  // Merge transaction budget amounts into consuntivo
+  // Consuntivo entries go to certo (already happened = certain cash flow),
+  // NOT to the consuntivo column (which is transaction-only)
+  const consuntivoEntryAgg = aggregateScenario(entries, 'consuntivo');
+  for (const [row, arr] of consuntivoEntryAgg) {
+    if (!scenarioData.certo.has(row)) scenarioData.certo.set(row, new Array(12).fill(0));
+    const merged = scenarioData.certo.get(row);
+    for (let i = 0; i < 12; i++) merged[i] += arr[i];
+    if (!categoryMap.has(row)) {
+      const entry = entries.find((e) => e.budgetRow === row);
+      const isCost = row >= COST_ROW_MIN && row <= COST_ROW_MAX;
+      categoryMap.set(row, { category: entry?.category || `Row ${row}`, type: isCost ? 'cost' : 'revenue' });
+    }
+  }
+
+  // Consuntivo column = transactions only
+  scenarioData['consuntivo'] = new Map();
   if (txConsuntivo) {
-    const consMap = scenarioData['consuntivo'];
     for (const [rowStr, monthlyAmounts] of Object.entries(txConsuntivo)) {
       const row = Number(rowStr);
-      if (!consMap.has(row)) consMap.set(row, new Array(12).fill(0));
-      const arr = consMap.get(row);
+      const arr = new Array(12).fill(0);
       for (let i = 0; i < 12; i++) {
-        arr[i] += monthlyAmounts[i] || 0;
+        arr[i] = monthlyAmounts[i] || 0;
       }
-      // Auto-register category if not yet known
+      scenarioData['consuntivo'].set(row, arr);
       if (!categoryMap.has(row)) {
         const isCost = row >= COST_ROW_MIN && row <= COST_ROW_MAX;
         categoryMap.set(row, { category: `Row ${row}`, type: isCost ? 'cost' : 'revenue' });
@@ -202,16 +201,27 @@ function buildBudgetProjection(budget, entries, txConsuntivo) {
     for (let i = 0; i < 12; i++) merged[i] += arr[i];
   }
 
-  // Track which (row, month) have at least one certo or consuntivo entry
-  const certoEntryPresent = new Map();
-  for (const entry of (entries || []).filter(e => e.scenario === 'certo' || e.scenario === 'consuntivo')) {
-    const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
-    const offset = PAYMENT_OFFSET[entry.payment] || 0;
-    const targetMonth = baseMonth + offset;
-    if (targetMonth > 11) continue;
-    if (!certoEntryPresent.has(entry.budgetRow)) certoEntryPresent.set(entry.budgetRow, new Set());
-    certoEntryPresent.get(entry.budgetRow).add(targetMonth);
-  }
+  // Aggregate possibile and ottimistico entries with payment offset (cash flow = cassa)
+  const possibileByRow = aggregateScenario(entries || [], 'possibile');
+  const ottimisticoByRow = aggregateScenario(entries || [], 'ottimistico');
+
+  // Track which (row, month) have entries per scenario
+  const buildEntryPresence = (scenarioFilter) => {
+    const present = new Map();
+    for (const entry of (entries || []).filter(scenarioFilter)) {
+      const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
+      const offset = PAYMENT_OFFSET[entry.payment] || 0;
+      const targetMonth = baseMonth + offset;
+      if (targetMonth > 11) continue;
+      if (!present.has(entry.budgetRow)) present.set(entry.budgetRow, new Set());
+      present.get(entry.budgetRow).add(targetMonth);
+    }
+    return present;
+  };
+
+  const certoEntryPresent = buildEntryPresence(e => e.scenario === 'certo' || e.scenario === 'consuntivo');
+  const possibileEntryPresent = buildEntryPresence(e => e.scenario === 'possibile');
+  const ottimisticoEntryPresent = buildEntryPresence(e => e.scenario === 'ottimistico');
 
   const buildRows = (budgetSection) =>
     budgetSection.map((item) => {
@@ -231,8 +241,15 @@ function buildBudgetProjection(budget, entries, txConsuntivo) {
           fromEntries = true;
         }
 
-        const possibile = bm.possibile || 0;
-        const ottimistico = bm.ottimistico || 0;
+        // Possibile/ottimistico: use entries (with payment offset) when available, else Excel
+        let possibile = bm.possibile || 0;
+        if (possibileEntryPresent.has(item.row) && possibileEntryPresent.get(item.row).has(i)) {
+          possibile = possibileByRow.get(item.row)?.[i] || 0;
+        }
+        let ottimistico = bm.ottimistico || 0;
+        if (ottimisticoEntryPresent.has(item.row) && ottimisticoEntryPresent.get(item.row).has(i)) {
+          ottimistico = ottimisticoByRow.get(item.row)?.[i] || 0;
+        }
         let consuntivo = 0;
         if (txConsuntivo && txConsuntivo[item.row]) {
           consuntivo = txConsuntivo[item.row][i] || 0;
@@ -303,7 +320,7 @@ function buildBudgetProjection(budget, entries, txConsuntivo) {
 // Annual Summary
 // ---------------------------------------------------------------------------
 
-function AnnualSummary({ projection, onConsuntivoClick }) {
+function AnnualSummary({ projection, onCellClick }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const colSpan = FIELDS.length + 1;
   const toggle = (key) => setExpandedRow((prev) => (prev === key ? null : key));
@@ -328,10 +345,10 @@ function AnnualSummary({ projection, onConsuntivoClick }) {
             </td>
             {FIELDS.map((f) => {
               const v = f === 'diff' ? -row.annual[f] : row.annual[f];
-              if (f === 'consuntivo' && onConsuntivoClick) {
+              if (f !== 'diff' && onCellClick) {
                 return (
                   <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
-                    <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category)} />
+                    <ValueLink value={row.annual[f]} onClick={() => onCellClick(null, row.category, f, row.annual[f])} />
                   </td>
                 );
               }
@@ -352,7 +369,7 @@ function AnnualSummary({ projection, onConsuntivoClick }) {
           {isExpanded && (
             <tr>
               <td colSpan={colSpan} className="p-0">
-                <CFMonthlyDrillDown row={row} isCost={isCost} onClose={() => setExpandedRow(null)} onConsuntivoClick={onConsuntivoClick} />
+                <CFMonthlyDrillDown row={row} isCost={isCost} onClose={() => setExpandedRow(null)} onCellClick={onCellClick} />
               </td>
             </tr>
           )}
@@ -446,7 +463,7 @@ function AnnualSummary({ projection, onConsuntivoClick }) {
 }
 
 // Expanded monthly breakdown — same columns per month
-function CFMonthlyDrillDown({ row, isCost, onClose, onConsuntivoClick, onCertoEntryClick }) {
+function CFMonthlyDrillDown({ row, isCost, onClose, onCellClick }) {
   return (
     <div className="mx-4 my-2 bg-white rounded-xl shadow-elevation-1 p-4">
       <div className="flex justify-between items-center mb-2">
@@ -474,17 +491,10 @@ function CFMonthlyDrillDown({ row, isCost, onClose, onConsuntivoClick, onCertoEn
                 <td className="px-2 py-1.5 text-xs font-medium text-on-surface-secondary">{m}</td>
                 {FIELDS.map((f) => {
                   const v = f === 'diff' ? -row.months[m][f] : row.months[m][f];
-                  if (f === 'certo' && onCertoEntryClick && row.certoFromEntries?.[m]) {
+                  if (f !== 'diff' && onCellClick) {
                     return (
                       <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
-                        <CertoEntryLink value={row.months[m].certo} onClick={() => onCertoEntryClick(m, row.category)} />
-                      </td>
-                    );
-                  }
-                  if (f === 'consuntivo' && onConsuntivoClick) {
-                    return (
-                      <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
-                        <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category)} />
+                        <ValueLink value={row.months[m][f]} onClick={() => onCellClick(m, row.category, f, row.months[m][f])} />
                       </td>
                     );
                   }
@@ -514,7 +524,7 @@ function CFMonthlyDrillDown({ row, isCost, onClose, onConsuntivoClick, onCertoEn
 // Budget Annual Summary — Excel Budget baseline with entry overrides
 // ---------------------------------------------------------------------------
 
-function BudgetAnnualSummary({ projection, onConsuntivoClick, onCertoEntryClick }) {
+function BudgetAnnualSummary({ projection, onCellClick }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const colSpan = FIELDS.length + 1;
   const toggle = (key) => setExpandedRow((prev) => (prev === key ? null : key));
@@ -523,7 +533,6 @@ function BudgetAnnualSummary({ projection, onConsuntivoClick, onCertoEntryClick 
     rows.map((row) => {
       const key = `${section}-${row.row}`;
       const isExpanded = expandedRow === key;
-      const hasCertoEntries = row.certoFromEntries && Object.values(row.certoFromEntries).some(v => v);
       return (
         <tbody key={key} className="border-b border-surface-border">
           <tr
@@ -540,17 +549,10 @@ function BudgetAnnualSummary({ projection, onConsuntivoClick, onCertoEntryClick 
             </td>
             {FIELDS.map((f) => {
               const v = f === 'diff' ? -row.annual[f] : row.annual[f];
-              if (f === 'certo' && hasCertoEntries && onCertoEntryClick) {
+              if (f !== 'diff' && onCellClick) {
                 return (
                   <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
-                    <CertoEntryLink value={row.annual.certo} onClick={() => onCertoEntryClick(null, row.category)} />
-                  </td>
-                );
-              }
-              if (f === 'consuntivo' && onConsuntivoClick) {
-                return (
-                  <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
-                    <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category)} />
+                    <ValueLink value={row.annual[f]} onClick={() => onCellClick(null, row.category, f, row.annual[f])} />
                   </td>
                 );
               }
@@ -571,7 +573,7 @@ function BudgetAnnualSummary({ projection, onConsuntivoClick, onCertoEntryClick 
           {isExpanded && (
             <tr>
               <td colSpan={colSpan} className="p-0">
-                <CFMonthlyDrillDown row={row} isCost={isCost} onClose={() => setExpandedRow(null)} onConsuntivoClick={onConsuntivoClick} onCertoEntryClick={onCertoEntryClick} />
+                <CFMonthlyDrillDown row={row} isCost={isCost} onClose={() => setExpandedRow(null)} onCellClick={onCellClick} />
               </td>
             </tr>
           )}
@@ -785,11 +787,9 @@ function MonthlyDetail({ projection }) {
 // Budget Monthly Detail — Excel Budget baseline, 12-month columns
 // ---------------------------------------------------------------------------
 
-function BudgetMonthlyDetail({ projection, onConsuntivoClick, onCertoEntryClick }) {
+function BudgetMonthlyDetail({ projection, onCellClick }) {
   const [scenario, setScenario] = useState('possibile');
   const colSpan = MONTHS.length + 2;
-  const isCerto = scenario === 'certo';
-
   const renderCategoryRows = (rows) =>
     rows.map((row) => (
       <tr key={row.row} className="border-b border-surface-border hover:bg-surface-dim/50 transition-colors">
@@ -797,10 +797,10 @@ function BudgetMonthlyDetail({ projection, onConsuntivoClick, onCertoEntryClick 
           {row.category}
         </td>
         {MONTHS.map((m) => {
-          if (isCerto && row.certoFromEntries?.[m] && onCertoEntryClick) {
+          if (onCellClick) {
             return (
               <td key={m} className="px-2 py-1.5 text-right text-xs tabular-nums">
-                <CertoEntryLink value={row.months[m].certo} onClick={() => onCertoEntryClick(m, row.category)} />
+                <ValueLink value={row.months[m][scenario]} onClick={() => onCellClick(m, row.category, scenario, row.months[m][scenario])} />
               </td>
             );
           }
@@ -809,8 +809,8 @@ function BudgetMonthlyDetail({ projection, onConsuntivoClick, onCertoEntryClick 
           );
         })}
         <td className="px-2 py-1.5 text-right text-xs border-l border-surface-border tabular-nums font-medium">
-          {isCerto && row.certoFromEntries && Object.values(row.certoFromEntries).some(v => v) && onCertoEntryClick
-            ? <CertoEntryLink value={row.annual.certo} onClick={() => onCertoEntryClick(null, row.category)} />
+          {onCellClick
+            ? <ValueLink value={row.annual[scenario]} onClick={() => onCellClick(null, row.category, scenario, row.annual[scenario])} />
             : fmt(row.annual[scenario])
           }
         </td>
@@ -924,7 +924,7 @@ const VIEWS = [
   { key: 'monthly-budget', label: 'Monthly Detail + Budget' },
 ];
 
-export default function CashFlowProjection({ entries, budget, txConsuntivo, onConsuntivoClick, onCertoEntryClick }) {
+export default function CashFlowProjection({ entries, budget, txConsuntivo, onCellClick }) {
   const [view, setView] = useState('annual');
 
   const projection = useMemo(
@@ -965,10 +965,10 @@ export default function CashFlowProjection({ entries, budget, txConsuntivo, onCo
         </div>
       )}
 
-      {hasData && view === 'annual' && <AnnualSummary projection={projection} onConsuntivoClick={onConsuntivoClick} />}
+      {hasData && view === 'annual' && <AnnualSummary projection={projection} onCellClick={onCellClick} />}
       {hasData && view === 'monthly' && <MonthlyDetail projection={projection} />}
-      {hasBudgetData && view === 'annual-budget' && <BudgetAnnualSummary projection={budgetProjection} onConsuntivoClick={onConsuntivoClick} onCertoEntryClick={onCertoEntryClick} />}
-      {hasBudgetData && view === 'monthly-budget' && <BudgetMonthlyDetail projection={budgetProjection} onConsuntivoClick={onConsuntivoClick} onCertoEntryClick={onCertoEntryClick} />}
+      {hasBudgetData && view === 'annual-budget' && <BudgetAnnualSummary projection={budgetProjection} onCellClick={onCellClick} />}
+      {hasBudgetData && view === 'monthly-budget' && <BudgetMonthlyDetail projection={budgetProjection} onCellClick={onCellClick} />}
     </div>
   );
 }

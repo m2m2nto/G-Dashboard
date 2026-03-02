@@ -103,7 +103,25 @@ function validateEntry(entry, year) {
 // Sync: aggregate entries and write to Excel
 // ---------------------------------------------------------------------------
 
-async function syncAllScenarios(year) {
+// Compute the Excel cell key(s) an entry maps to: "budgetRow-monthIndex"
+function entryCellKeys(entry) {
+  // Budget = competenza: use the date's month, no payment offset
+  const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
+  if (baseMonth > 11) return [];
+  const scenario = entry.scenario || 'consuntivo';
+  const result = [{ scenario, key: `${entry.budgetRow}-${baseMonth}` }];
+  // Also mark the old offset cell for cleanup (legacy data may exist there)
+  const offset = PAYMENT_OFFSET[entry.payment] || 0;
+  if (offset > 0) {
+    const offsetMonth = baseMonth + offset;
+    if (offsetMonth <= 11) {
+      result.push({ scenario, key: `${entry.budgetRow}-${offsetMonth}` });
+    }
+  }
+  return result;
+}
+
+async function syncAllScenarios(year, staleCells = []) {
   const data = await readEntriesFile(year);
 
   // Group entries by scenario
@@ -113,27 +131,51 @@ async function syncAllScenarios(year) {
     if (byScenario[s]) byScenario[s].push(entry);
   }
 
-  // Build aggregation for each scenario
-  const buildAggregation = (entries) => {
+  // Build aggregation for each scenario.
+  // staleCells: cells that may no longer have entries and must be zeroed in Excel
+  // if no remaining entries contribute to them.
+  const buildAggregation = (entries, zeroCells = []) => {
     const agg = new Map();
+    // Pre-seed potentially stale cells to 0 so they get cleared
+    for (const key of zeroCells) {
+      agg.set(key, 0);
+    }
     for (const entry of entries) {
+      // Budget = competenza: use the date's month, no payment offset
       const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1; // 0-based
-      const offset = PAYMENT_OFFSET[entry.payment] || 0;
-      const monthIndex = baseMonth + offset;
-      if (monthIndex > 11) continue;
-      const key = `${entry.budgetRow}-${monthIndex}`;
+      if (baseMonth > 11) continue;
+      const key = `${entry.budgetRow}-${baseMonth}`;
       agg.set(key, (agg.get(key) || 0) + entry.amount);
     }
     return agg;
   };
 
+  // Group stale cells by scenario
+  const staleByScenario = { consuntivo: [], certo: [], possibile: [], ottimistico: [] };
+  for (const { scenario, key } of staleCells) {
+    if (staleByScenario[scenario]) staleByScenario[scenario].push(key);
+  }
+  // Clear old offset-based cells: entries with payment offsets may have left
+  // values at baseMonth+offset from before the competenza fix
+  for (const entry of data.entries) {
+    const offset = PAYMENT_OFFSET[entry.payment] || 0;
+    if (offset > 0) {
+      const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
+      const offsetMonth = baseMonth + offset;
+      if (offsetMonth <= 11) {
+        const s = entry.scenario || 'consuntivo';
+        if (staleByScenario[s]) staleByScenario[s].push(`${entry.budgetRow}-${offsetMonth}`);
+      }
+    }
+  }
+
   // Always sync consuntivo
-  await updateBudgetConsuntivoBatch(year, buildAggregation(byScenario.consuntivo));
+  await updateBudgetConsuntivoBatch(year, buildAggregation(byScenario.consuntivo, staleByScenario.consuntivo));
 
   // Only sync seeded scenarios
   for (const scenario of BUDGET_SCENARIOS) {
     if (data.seeded[scenario]) {
-      await updateBudgetScenarioBatch(year, scenario, buildAggregation(byScenario[scenario]));
+      await updateBudgetScenarioBatch(year, scenario, buildAggregation(byScenario[scenario], staleByScenario[scenario]));
     }
   }
 }
@@ -219,6 +261,7 @@ export function addEntry(year, entry) {
       amount: Number(entry.amount),
       payment: entry.payment || 'inMonth',
       notes: entry.notes || '',
+      updatedAt: new Date().toISOString(),
     };
     data.entries.push(newEntry);
     await writeEntriesFile(year, data);
@@ -233,6 +276,9 @@ export function updateEntry(year, id, patch) {
     const idx = data.entries.findIndex((e) => e.id === id);
     if (idx === -1) throw new Error(`Entry ${id} not found`);
 
+    // Capture old cell coords — if row/month/scenario changed, old cell may need zeroing
+    const oldCells = entryCellKeys(data.entries[idx]);
+
     const merged = { ...data.entries[idx], ...patch };
     validateEntry(merged, year);
 
@@ -246,10 +292,11 @@ export function updateEntry(year, id, patch) {
       amount: Number(merged.amount),
       payment: merged.payment || 'inMonth',
       notes: merged.notes || '',
+      updatedAt: new Date().toISOString(),
     };
 
     await writeEntriesFile(year, data);
-    await syncAllScenarios(year);
+    await syncAllScenarios(year, oldCells);
     return data.entries[idx];
   });
 }
@@ -260,9 +307,12 @@ export function deleteEntry(year, id) {
     const idx = data.entries.findIndex((e) => e.id === id);
     if (idx === -1) throw new Error(`Entry ${id} not found`);
 
+    // Capture deleted entry's cell coords so sync can zero them if no other entries remain
+    const staleCells = entryCellKeys(data.entries[idx]);
+
     data.entries.splice(idx, 1);
     await writeEntriesFile(year, data);
-    await syncAllScenarios(year);
+    await syncAllScenarios(year, staleCells);
     return { ok: true };
   });
 }

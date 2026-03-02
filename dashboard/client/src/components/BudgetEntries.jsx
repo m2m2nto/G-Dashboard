@@ -35,6 +35,17 @@ function fmtDate(dateStr) {
   return `${d}/${m}/${y}`;
 }
 
+function fmtDateTime(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yy} ${hh}:${mi}`;
+}
+
 const PAYMENT_OPTIONS = [
   { value: 'inMonth', label: 'In month' },
   { value: '30days', label: '30 days' },
@@ -43,7 +54,7 @@ const PAYMENT_OPTIONS = [
 
 const emptyForm = { date: '', description: '', category: '', budgetRow: null, amount: '', payment: 'inMonth', notes: '', scenario: 'consuntivo' };
 
-export default function BudgetEntries({ entries, year, budgetCategories, onAdd, onUpdate, onDelete, onSeed, loading, initialMonth, initialCategory, initialScenario, seededScenarios }) {
+export default function BudgetEntries({ entries, year, budgetCategories, onAdd, onUpdate, onDelete, onSeed, loading, seededScenarios }) {
   const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 10);
@@ -60,13 +71,6 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
   const [seedTarget, setSeedTarget] = useState(null);
   const [seeding, setSeeding] = useState(false);
   const descRef = useRef(null);
-
-  // Apply initial filters when navigating from consuntivo cells
-  useEffect(() => {
-    if (initialMonth !== undefined) setMonthFilter(initialMonth);
-    if (initialCategory !== undefined) setCategoryFilter(initialCategory);
-    if (initialScenario !== undefined) setScenarioFilter(initialScenario);
-  }, [initialMonth, initialCategory, initialScenario]);
 
   const costs = budgetCategories.filter((c) => c.type === 'cost');
   const revenues = budgetCategories.filter((c) => c.type === 'revenue');
@@ -156,7 +160,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
   if (monthFilter) filtered = filtered.filter((e) => monthFromDate(e.date) === monthFilter);
   if (categoryFilter) filtered = filtered.filter((e) => e.category === categoryFilter);
   if (scenarioFilter) filtered = filtered.filter((e) => (e.scenario || 'consuntivo') === scenarioFilter);
-  filtered = [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  filtered = [...filtered].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
   const CategorySelect = ({ value, onChange, id }) => (
     <select
@@ -403,13 +407,14 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
               <th className="px-3 py-2 text-right text-xs font-medium w-28">Amount</th>
               <th className="px-3 py-2 text-center text-xs font-medium w-20">Payment</th>
               <th className="px-3 py-2 text-left text-xs font-medium w-40">Notes</th>
+              <th className="px-3 py-2 text-left text-xs font-medium w-32">Updated</th>
               <th className="px-3 py-2 text-center text-xs font-medium w-24">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-surface-border">
             {loading && !entries.length && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-on-surface-secondary">
+                <td colSpan={10} className="px-3 py-8 text-center text-on-surface-secondary">
                   <svg className="animate-spin h-5 w-5 text-primary mx-auto" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -419,7 +424,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
             )}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-on-surface-secondary text-sm">
+                <td colSpan={10} className="px-3 py-8 text-center text-on-surface-secondary text-sm">
                   No entries{scenarioFilter ? ` for ${scenarioFilter}` : ''}{monthFilter ? ` in ${monthFilter}` : ''}{categoryFilter ? ` in ${categoryFilter}` : ''}
                 </td>
               </tr>
@@ -488,6 +493,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                       className={`${CONTROL_PADDED} w-full text-xs`}
                     />
                   </td>
+                  <td className="px-3 py-1.5 text-xs text-on-surface-tertiary tabular-nums">{fmtDateTime(entry.updatedAt)}</td>
                   <td className="px-3 py-1.5 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button onClick={saveEdit} disabled={submitting} className={BUTTON_GHOST} title="Save">
@@ -517,6 +523,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                     {PAYMENT_OPTIONS.find((o) => o.value === entry.payment)?.label || 'In month'}
                   </td>
                   <td className="px-3 py-2 text-xs text-on-surface-secondary">{entry.notes}</td>
+                  <td className="px-3 py-2 text-xs text-on-surface-tertiary tabular-nums">{fmtDateTime(entry.updatedAt)}</td>
                   <td className="px-3 py-2 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button onClick={() => startEdit(entry)} className={BUTTON_GHOST} title="Edit">

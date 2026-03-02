@@ -15,6 +15,7 @@ import WelcomeSetup from './components/WelcomeSetup.jsx';
 import AppLayout from './components/AppLayout.jsx';
 import ActivityLog from './components/ActivityLog.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
+import BudgetEntriesDialog from './components/BudgetEntriesDialog.jsx';
 import SubTabBar from './components/SubTabBar.jsx';
 import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE } from './ui.js';
 import {
@@ -77,9 +78,7 @@ export default function App() {
   const [section, setSection] = useState('home');
   const [cfView, setCfView] = useState('overview');
   const [budgetView, setBudgetView] = useState('overview');
-  const [entriesInitialMonth, setEntriesInitialMonth] = useState(undefined);
-  const [entriesInitialCategory, setEntriesInitialCategory] = useState(undefined);
-  const [entriesInitialScenario, setEntriesInitialScenario] = useState('consuntivo');
+  const [entriesDialog, setEntriesDialog] = useState(null);
   const [analyticsView, setAnalyticsView] = useState('cashflow');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('g-dash-sidebar-collapsed') === 'true';
@@ -498,7 +497,7 @@ export default function App() {
     setSection(sec);
     // Reset sub-views to defaults
     if (sec === 'cashflow') setCfView('overview');
-    if (sec === 'budget') { setBudgetView('overview'); setEntriesInitialMonth(undefined); setEntriesInitialCategory(undefined); setEntriesInitialScenario('consuntivo'); }
+    if (sec === 'budget') setBudgetView('overview');
     if (sec === 'analytics') setAnalyticsView('cashflow');
   };
 
@@ -725,19 +724,9 @@ export default function App() {
                     entries={budgetEntries}
                     budget={budget}
                     txConsuntivo={txBudgetSummary}
-                    onConsuntivoClick={(month, category) => {
-                      setEntriesInitialMonth(month || undefined);
-                      setEntriesInitialCategory(category || undefined);
-                      setEntriesInitialScenario('consuntivo');
-                      setBudgetView('entries');
-                      setSection('budget');
-                    }}
-                    onCertoEntryClick={(month, category) => {
-                      setEntriesInitialMonth(month || undefined);
-                      setEntriesInitialCategory(category || undefined);
-                      setEntriesInitialScenario(undefined);
-                      setBudgetView('entries');
-                      setSection('budget');
+                    onCellClick={(month, category, scenario, value) => {
+                      const dialogScenario = scenario === 'certo' ? ['certo', 'consuntivo'] : scenario;
+                      setEntriesDialog({ month: month || null, category, scenario: dialogScenario, expectedTotal: value ?? null, cashFlowMode: true });
                     }}
                   />
                 </div>
@@ -995,11 +984,8 @@ export default function App() {
                 <BudgetGrid
                   data={budget}
                   year={globalYear}
-                  onConsuntivoClick={(month, category) => {
-                    setEntriesInitialMonth(month || undefined);
-                    setEntriesInitialCategory(category || undefined);
-                    setEntriesInitialScenario('consuntivo');
-                    setBudgetView('entries');
+                  onConsuntivoClick={(month, category, value) => {
+                    setEntriesDialog({ month: month || null, category, scenario: 'consuntivo', expectedTotal: value ?? null });
                   }}
                   onAddEntry={handleAddBudgetEntry}
                 />
@@ -1022,9 +1008,6 @@ export default function App() {
                   onSeed={handleSeedBudgetEntries}
                   loading={budgetEntriesLoading}
                   seededScenarios={seededScenarios}
-                  initialMonth={entriesInitialMonth}
-                  initialCategory={entriesInitialCategory}
-                  initialScenario={entriesInitialScenario}
                 />
               </div>
             )}
@@ -1126,6 +1109,19 @@ export default function App() {
         )}
 
       </AppLayout>
+
+      {/* Budget Entries Dialog */}
+      <BudgetEntriesDialog
+        open={!!entriesDialog}
+        onClose={() => setEntriesDialog(null)}
+        entries={budgetEntries}
+        month={entriesDialog?.month}
+        category={entriesDialog?.category}
+        scenario={entriesDialog?.scenario}
+        expectedTotal={entriesDialog?.expectedTotal}
+        year={globalYear}
+        cashFlowMode={entriesDialog?.cashFlowMode}
+      />
 
       {/* Settings Panel */}
       <SettingsPanel
