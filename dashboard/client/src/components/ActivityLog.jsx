@@ -9,6 +9,7 @@ const ACTION_BADGES = {
   'budget.update': { label: 'Budget \u2715', color: 'bg-primary-light text-primary' },
   'budget.delete': { label: 'Budget \u2212', color: 'bg-status-negative/15 text-status-negative' },
   'budget.seed': { label: 'Seed', color: 'bg-amber-100 text-amber-700' },
+  'budget.refresh': { label: 'Refresh', color: 'bg-orange-100 text-orange-700' },
 };
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
@@ -69,6 +70,8 @@ function describe(entry) {
       return details?.description || details?.id || 'Entry deleted';
     case 'budget.seed':
       return `Seeded ${details?.scenario || 'scenario'}${details?.count != null ? ` (${details.count} entries)` : ''}`;
+    case 'budget.refresh':
+      return `Refreshed ${details?.scenario || 'scenario'} — ${details?.created || 0} adjustments, ${details?.skipped || 0} matched`;
     default:
       return action;
   }

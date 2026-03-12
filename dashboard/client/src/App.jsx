@@ -7,6 +7,7 @@ import BudgetGrid from './components/BudgetGrid.jsx';
 import BudgetEntries from './components/BudgetEntries.jsx';
 import BudgetCharts from './components/BudgetCharts.jsx';
 import CashFlowProjection from './components/CashFlowProjection.jsx';
+import CashFlowByBudget from './components/CashFlowByBudget.jsx';
 import ElementsTable from './components/ElementsTable.jsx';
 import CategoryMapping from './components/CategoryMapping.jsx';
 import ChartsView from './components/ChartsView.jsx';
@@ -16,6 +17,7 @@ import AppLayout from './components/AppLayout.jsx';
 import ActivityLog from './components/ActivityLog.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
 import BudgetEntriesDialog from './components/BudgetEntriesDialog.jsx';
+import TransactionImpactDialog from './components/TransactionImpactDialog.jsx';
 import SubTabBar from './components/SubTabBar.jsx';
 import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE } from './ui.js';
 import {
@@ -35,6 +37,7 @@ import {
   updateBudgetEntry,
   deleteBudgetEntry,
   seedBudgetEntries,
+  refreshBudgetEntries,
   getBudgetCategories,
   getCategories,
   getElements,
@@ -79,6 +82,7 @@ export default function App() {
   const [cfView, setCfView] = useState('overview');
   const [budgetView, setBudgetView] = useState('overview');
   const [entriesDialog, setEntriesDialog] = useState(null);
+  const [pendingTx, setPendingTx] = useState(null); // { data, row (if update) }
   const [analyticsView, setAnalyticsView] = useState('cashflow');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('g-dash-sidebar-collapsed') === 'true';
@@ -259,6 +263,7 @@ export default function App() {
 
   useEffect(() => {
     if (section === 'cashflow' && cfView === 'lux-cashflow') loadCashFlow();
+    if (section === 'cashflow' && cfView === 'overview') getCashFlow(globalYear).then(setCashFlow).catch(() => {});
   }, [section, cfView, globalYear, loadCashFlow]);
 
   const loadBudget = useCallback(async () => {
@@ -410,35 +415,110 @@ export default function App() {
     }
   };
 
+  const handleRefreshBudgetEntries = async (scenario) => {
+    try {
+      const result = await refreshBudgetEntries(globalYear, scenario);
+      if (result.created > 0) {
+        pushToast('success', `Created ${result.created} adjustment entries for ${scenario}`);
+      } else {
+        pushToast('success', `${scenario} is already in sync with Excel (${result.skipped} cells matched)`);
+      }
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    } catch (err) {
+      pushToast('error', err.message || 'Failed to refresh entries');
+      throw err;
+    }
+  };
+
   // ── Transaction handlers ──
   const handleUpdateTransaction = async (row, data) => {
-    await updateTransaction(globalYear, month, row, data);
-    if (data.cashFlow && data.transaction) {
-      await updateElementCategory(data.transaction, data.cashFlow);
-      getCategoryHints().then(setCategoryHints).catch(() => {});
-    }
-    await loadTransactions({ silent: true });
+    setPendingTx({ data, row });
   };
 
   const handleDeleteTransaction = async (row) => {
     await deleteTransaction(globalYear, month, row);
+    // Delete linked budget entry if any
+    const txKey = `${month}-${row}`;
+    const linkedEntry = budgetEntries?.find((e) => e.transactionKey === txKey);
+    if (linkedEntry) {
+      await deleteBudgetEntry(globalYear, linkedEntry.id).catch(() => {});
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
+    }
     await loadTransactions({ silent: true });
   };
 
   const handleAddTransaction = async (formData) => {
+    setPendingTx({ data: formData });
+    return true;
+  };
+
+  const handleConfirmTransaction = async () => {
+    if (!pendingTx) return;
+    const { data, row } = pendingTx;
+    const isUpdate = row != null;
     setSubmitting(true);
+    let result = null;
     try {
-      const result = await addTransaction(globalYear, month, formData);
-      if (result.year && result.year !== globalYear) setGlobalYear(result.year);
-      if (result.month && result.month !== month) setMonth(result.month);
+      if (isUpdate) {
+        await updateTransaction(globalYear, month, row, data);
+        if (data.cashFlow && data.transaction) {
+          await updateElementCategory(data.transaction, data.cashFlow);
+          getCategoryHints().then(setCategoryHints).catch(() => {});
+        }
+      } else {
+        result = await addTransaction(globalYear, month, data);
+        if (result.year && result.year !== globalYear) setGlobalYear(result.year);
+        if (result.month && result.month !== month) setMonth(result.month);
+      }
+      // Sync the linked budget entry (1-1 with transaction)
+      {
+        const txYear = data.date ? data.date.slice(0, 4) : globalYear;
+        const txMonth = data.date ? data.date.slice(5, 7) : null;
+        const txMonthName = txMonth ? ['GEN','FEB','MAR','APR','MAG','GIU','LUG','AGO','SET','OTT','NOV','DIC'][parseInt(txMonth, 10) - 1] : month;
+        // For add: use result.row; for update: use row from pendingTx
+        const txRow = isUpdate ? row : result?.row;
+        const txKey = txRow != null ? `${txMonthName}-${txRow}` : null;
+        const amount = Number(data.inflow) || Number(data.outflow) || 0;
+
+        try {
+          // Find existing linked entry
+          const existing = txKey && budgetEntries
+            ? budgetEntries.find((e) => e.transactionKey === txKey)
+            : null;
+
+          if (data.budgetCategory && data.budgetRow != null && amount) {
+            const entryData = {
+              date: data.date,
+              description: data.transaction || data.notes || '',
+              category: data.budgetCategory,
+              budgetRow: Number(data.budgetRow),
+              amount,
+              payment: 'inMonth',
+              scenario: 'consuntivo',
+              notes: data.notes || '',
+              transactionKey: txKey,
+            };
+            if (existing) {
+              await updateBudgetEntry(txYear, existing.id, entryData);
+            } else {
+              await addBudgetEntry(txYear, entryData);
+            }
+          } else if (existing) {
+            // Budget category cleared — remove the linked entry
+            await deleteBudgetEntry(txYear, existing.id);
+          }
+          await Promise.all([loadBudgetEntries(), loadBudget()]);
+        } catch (err) {
+          pushToast('error', 'Transaction saved but budget entry failed: ' + (err.message || ''));
+        }
+      }
       await loadTransactions({ silent: true });
-      setSubmitting(false);
-      return true;
+      setPendingTx(null);
+      pushToast('success', isUpdate ? 'Transaction updated.' : 'Transaction added.');
     } catch (err) {
-      pushToast('error', err.message || 'Unable to add transaction.');
-      setSubmitting(false);
-      return false;
+      pushToast('error', err.message || (isUpdate ? 'Unable to update transaction.' : 'Unable to add transaction.'));
     }
+    setSubmitting(false);
   };
 
   const handleUpdateElementCategory = async (name, category) => {
@@ -467,7 +547,7 @@ export default function App() {
       if (cfView === 'lux-cashflow') loadCashFlow();
       if (cfView === 'recipients') loadElements();
       if (cfView === 'mapping') loadCfBudgetMap();
-      if (cfView === 'overview') { loadBudget(); loadBudgetEntries(); getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null)); }
+      if (cfView === 'overview') { getCashFlow(globalYear).then(setCashFlow).catch(() => {}); loadBudget(); loadBudgetEntries(); getTransactionBudgetSummary(globalYear).then(setTxBudgetSummary).catch(() => setTxBudgetSummary(null)); }
     }
     if (section === 'budget') { loadBudget(); loadBudgetEntries(); }
     if (section === 'analytics') { loadCharts(); if (analyticsView === 'budget') loadBudget(); }
@@ -710,7 +790,7 @@ export default function App() {
 
             {cfView === 'overview' && (
               <>
-                {(budgetLoading || budgetEntriesLoading) && (
+                {budgetLoading && (
                   <span className="text-sm text-on-surface-secondary flex items-center gap-2">
                     <svg className="animate-spin h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -720,13 +800,12 @@ export default function App() {
                   </span>
                 )}
                 <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
-                  <CashFlowProjection
-                    entries={budgetEntries}
+                  <CashFlowByBudget
+                    txBudgetSummary={txBudgetSummary}
                     budget={budget}
-                    txConsuntivo={txBudgetSummary}
-                    onCellClick={(month, category, scenario, value) => {
-                      const dialogScenario = scenario === 'certo' ? ['certo', 'consuntivo'] : scenario;
-                      setEntriesDialog({ month: month || null, category, scenario: dialogScenario, expectedTotal: value ?? null, cashFlowMode: true });
+                    luxCashFlow={cashFlow}
+                    onCellClick={(month, category, value) => {
+                      setEntriesDialog({ month: month || null, category, scenario: 'consuntivo', expectedTotal: value ?? null });
                     }}
                   />
                 </div>
@@ -1006,6 +1085,7 @@ export default function App() {
                   onUpdate={handleUpdateBudgetEntry}
                   onDelete={handleDeleteBudgetEntry}
                   onSeed={handleSeedBudgetEntries}
+                  onRefresh={handleRefreshBudgetEntries}
                   loading={budgetEntriesLoading}
                   seededScenarios={seededScenarios}
                 />
@@ -1121,6 +1201,16 @@ export default function App() {
         expectedTotal={entriesDialog?.expectedTotal}
         year={globalYear}
         cashFlowMode={entriesDialog?.cashFlowMode}
+      />
+
+      {/* Transaction Impact Dialog */}
+      <TransactionImpactDialog
+        open={!!pendingTx}
+        data={pendingTx?.data}
+        isUpdate={pendingTx?.row != null}
+        onConfirm={handleConfirmTransaction}
+        onCancel={() => setPendingTx(null)}
+        submitting={submitting}
       />
 
       {/* Settings Panel */}

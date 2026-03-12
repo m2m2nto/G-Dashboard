@@ -13,7 +13,7 @@ function fmt(v) {
   return Number(v).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 }
 
-// Diff = possibile - consuntivo. Costs: negative (under budget) = green. Revenues: positive (over forecast) = green.
+// Diff = forecast - actual. Costs: negative (spent less) = green. Revenues: positive (earned more) = green.
 function diffColor(value, isCost) {
   if (value == null || value === 0) return '';
   const isGood = isCost ? value < 0 : value > 0;
@@ -95,7 +95,7 @@ function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
               </span>
             </td>
             {FIELDS.map((f) => {
-              const v = f === 'diff' ? -row.annual[f] : row.annual[f];
+              const v = row.annual[f];
               if (f !== 'diff') {
                 return (
                   <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
@@ -133,7 +133,7 @@ function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
           {label}
         </td>
         {FIELDS.map((f) => {
-          const v = f === 'diff' ? -totals.annual[f] : totals.annual[f];
+          const v = totals.annual[f];
           return (
             <td
               key={f}
@@ -158,7 +158,7 @@ function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
           {label}
         </td>
         {FIELDS.map((f) => {
-          const v = f === 'diff' ? -totals.annual[f] : totals.annual[f];
+          const v = totals.annual[f];
           const color = f === 'diff'
             ? diffColor(v, false)
             : v > 0 ? 'text-cf-pos' : v < 0 ? 'text-cf-neg' : '';
@@ -269,7 +269,7 @@ function MonthlyDrillDown({ row, isCost, year, onClose, onConsuntivoClick, onAdd
                     </span>
                   </td>
                   {FIELDS.map((f) => {
-                    const v = f === 'diff' ? -row.months[m][f] : row.months[m][f];
+                    const v = row.months[m][f];
                     if (f !== 'diff') {
                       return (
                         <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
@@ -478,13 +478,13 @@ function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
               <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category, row.annual.consuntivo, 'consuntivo')} />
             </td>
           </tr>
-          {/* Δ (diff: possibile - consuntivo) */}
+          {/* Δ (diff: A - B = consuntivo - scenario) */}
           <tr className="hover:bg-surface-dim/50 transition-colors">
             <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium w-5 text-center">&Delta;</td>
             {MONTHS.map((m) => {
-              const bVal = sRow ? sRow.months[m] : 0;
               const aVal = row.months[m].consuntivo;
-              const d = bVal - aVal;
+              const bVal = sRow ? sRow.months[m] : 0;
+              const d = aVal - bVal;
               return (
                 <td key={m} className={`px-2 py-0.5 text-right text-xs tabular-nums ${diffColor(d, isCost)}`}>
                   {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
@@ -493,9 +493,9 @@ function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
             })}
             <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
               {(() => {
-                const bTotal = sRow ? sRow.total : 0;
                 const aTotal = row.annual.consuntivo;
-                const d = bTotal - aTotal;
+                const bTotal = sRow ? sRow.total : 0;
+                const d = aTotal - bTotal;
                 return (
                   <span className={diffColor(d, isCost)}>
                     {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
@@ -542,7 +542,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
         <tr className="bg-surface-dim font-semibold">
           <td className="px-1 py-0.5 text-[10px] text-on-surface-tertiary font-medium text-center bg-surface-dim">&Delta;</td>
           {MONTHS.map((m) => {
-            const d = (sRow ? sRow.months[m] : 0) - totalsGen.months[m].consuntivo;
+            const d = totalsGen.months[m].consuntivo - (sRow ? sRow.months[m] : 0);
             return (
               <td key={m} className={`px-2 py-0.5 text-right text-xs bg-surface-dim tabular-nums ${diffColor(d, isCost)}`}>
                 {d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}
@@ -551,7 +551,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
           })}
           <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border bg-surface-dim tabular-nums">
             {(() => {
-              const d = (sRow ? sRow.total : 0) - totalsGen.annual.consuntivo;
+              const d = totalsGen.annual.consuntivo - (sRow ? sRow.total : 0);
               return <span className={diffColor(d, isCost)}>{d !== 0 ? (d > 0 ? '+' : '') + fmt(d) : '\u2014'}</span>;
             })()}
           </td>

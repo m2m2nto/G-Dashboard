@@ -1625,7 +1625,7 @@ export async function readBudgetGenerale(year) {
         possibile,
         ottimistico,
         consuntivo,
-        diff: possibile - consuntivo,
+        diff: consuntivo - possibile,
       };
     }
     const annual = {};
@@ -2025,6 +2025,65 @@ export async function readBudgetScenarioRaw(year, scenario) {
   for (const r of allRows) {
     for (let mi = 0; mi < 12; mi++) {
       const col = BUDGET_SCENARIO_MONTH_START_COL + mi; // C(3)..N(14)
+      const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
+      const value = getCellValue(cellRef);
+      if (value && value !== 0) {
+        result.set(`${r}-${mi}`, value);
+      }
+    }
+  }
+
+  return { values: result, categoryNames };
+}
+
+/**
+ * Read raw consuntivo values from the "generale" sheet.
+ * The consuntivo column is at offset +3 within each month group.
+ * Returns Map<"row-monthIndex", value> of all non-zero data cells.
+ */
+export async function readBudgetGeneraleConsuntivoRaw(year) {
+  const filePath = getBudgetFile();
+  if (!filePath) throw new Error('Budget file not configured');
+
+  const formulaRows = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
+
+  const fileBuf = await readFile(filePath);
+  const zip = await JSZip.loadAsync(fileBuf);
+  const sheetName = BUDGET_SHEET_NAMES.generale(Number(year));
+  const sheetPath = await resolveBudgetSheetPath(zip, sheetName);
+  const sheetXml = await zip.file(sheetPath).async('string');
+
+  const getCellValue = buildCellEvaluator(sheetXml);
+
+  // Read category names from column B via ExcelJS
+  const categoryNames = new Map();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(fileBuf);
+  const ws = wb.getWorksheet(sheetName);
+  if (ws) {
+    for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
+      const name = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL));
+      if (name) categoryNames.set(r, String(name));
+    }
+    for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
+      const name = cellValue(ws.getRow(r).getCell(BUDGET_NAME_COL));
+      if (name) categoryNames.set(r, String(name));
+    }
+  }
+
+  const result = new Map();
+  const allRows = [];
+  for (let r = BUDGET_COST_ROWS.start; r <= BUDGET_COST_ROWS.end; r++) {
+    if (!formulaRows.includes(r)) allRows.push(r);
+  }
+  for (let r = BUDGET_REVENUE_ROWS.start; r <= BUDGET_REVENUE_ROWS.end; r++) {
+    if (!formulaRows.includes(r)) allRows.push(r);
+  }
+
+  for (const r of allRows) {
+    for (let mi = 0; mi < 12; mi++) {
+      // Consuntivo column is at offset +3 within each month's 5-column group
+      const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + 3;
       const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
       const value = getCellValue(cellRef);
       if (value && value !== 0) {

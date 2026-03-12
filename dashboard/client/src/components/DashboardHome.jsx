@@ -23,6 +23,7 @@ const ACTION_BADGES = {
   'budget.update': { label: 'Budget ✕', color: 'bg-primary-light text-primary' },
   'budget.delete': { label: 'Budget −', color: 'bg-status-negative/15 text-status-negative' },
   'budget.seed': { label: 'Seed', color: 'bg-amber-100 text-amber-700' },
+  'budget.refresh': { label: 'Refresh', color: 'bg-orange-100 text-orange-700' },
 };
 
 export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, onSyncCashFlow }) {

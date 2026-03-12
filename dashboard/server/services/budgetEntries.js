@@ -6,7 +6,7 @@ import {
   BUDGET_REVENUE_ROWS,
   BUDGET_SCENARIOS,
 } from '../config.js';
-import { updateBudgetConsuntivoBatch, updateBudgetScenarioBatch, readBudgetScenarioRaw } from './excel.js';
+import { updateBudgetConsuntivoBatch, updateBudgetScenarioBatch, readBudgetScenarioRaw, readBudgetGeneraleConsuntivoRaw } from './excel.js';
 
 const VALID_PAYMENTS = ['inMonth', '30days', '60days'];
 const PAYMENT_OFFSET = { inMonth: 0, '30days': 1, '60days': 2 };
@@ -227,6 +227,106 @@ export function seedEntries(year, scenario) {
 }
 
 // ---------------------------------------------------------------------------
+// Refresh: compare Excel values with current entries, create adjustments
+// ---------------------------------------------------------------------------
+
+export function refreshFromExcel(year, scenario) {
+  const isConsuntivo = scenario === 'consuntivo';
+  if (!isConsuntivo && !BUDGET_SCENARIOS.includes(scenario)) {
+    throw new Error(`Cannot refresh scenario "${scenario}". Valid: consuntivo, ${BUDGET_SCENARIOS.join(', ')}`);
+  }
+
+  return withLock(`budget-entries-${year}`, async () => {
+    const data = await readEntriesFile(year);
+    if (!isConsuntivo && !data.seeded[scenario]) {
+      throw new Error(`Scenario "${scenario}" must be seeded before refreshing.`);
+    }
+
+    // Read current Excel values — consuntivo comes from the "generale" sheet
+    const { values: excelValues, categoryNames } = isConsuntivo
+      ? await readBudgetGeneraleConsuntivoRaw(year)
+      : await readBudgetScenarioRaw(year, scenario);
+
+    // Aggregate existing entries per cell key (budgetRow-monthIndex) for this scenario
+    const entryTotals = new Map();
+    for (const entry of data.entries) {
+      if ((entry.scenario || 'consuntivo') !== scenario) continue;
+      const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
+      if (baseMonth > 11) continue;
+      const key = `${entry.budgetRow}-${baseMonth}`;
+      entryTotals.set(key, (entryTotals.get(key) || 0) + entry.amount);
+    }
+
+    // Compare and create adjustment entries
+    const MONTHS_PAD = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+    let created = 0;
+    let skipped = 0;
+
+    // Check all cells that exist in Excel
+    for (const [key, excelValue] of excelValues) {
+      const currentTotal = Math.round((entryTotals.get(key) || 0) * 100) / 100;
+      const targetValue = Math.round(excelValue * 100) / 100;
+      const diff = Math.round((targetValue - currentTotal) * 100) / 100;
+
+      if (diff === 0) {
+        skipped++;
+        continue;
+      }
+
+      const [rowStr, miStr] = key.split('-');
+      const row = Number(rowStr);
+      const mi = Number(miStr);
+
+      data.entries.push({
+        id: generateId(),
+        scenario,
+        date: `${year}-${MONTHS_PAD[mi]}-01`,
+        description: 'Excel adjustment',
+        category: categoryNames.get(row) || '',
+        budgetRow: row,
+        amount: diff,
+        payment: 'inMonth',
+        notes: `Refresh: Excel ${targetValue}, entries ${currentTotal}, adj ${diff > 0 ? '+' : ''}${diff}`,
+        updatedAt: new Date().toISOString(),
+      });
+      created++;
+    }
+
+    // Check cells that have entries but are zero/missing in Excel
+    for (const [key, currentTotal] of entryTotals) {
+      if (excelValues.has(key)) continue; // already handled above
+      const rounded = Math.round(currentTotal * 100) / 100;
+      if (rounded === 0) continue;
+
+      const [rowStr, miStr] = key.split('-');
+      const row = Number(rowStr);
+      const mi = Number(miStr);
+
+      data.entries.push({
+        id: generateId(),
+        scenario,
+        date: `${year}-${MONTHS_PAD[mi]}-01`,
+        description: 'Excel adjustment',
+        category: categoryNames.get(row) || '',
+        budgetRow: row,
+        amount: -rounded,
+        payment: 'inMonth',
+        notes: `Refresh: Excel 0, entries ${rounded}, adj ${-rounded}`,
+        updatedAt: new Date().toISOString(),
+      });
+      created++;
+    }
+
+    if (created > 0) {
+      await writeEntriesFile(year, data);
+      await syncAllScenarios(year);
+    }
+
+    return { created, skipped };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
 
@@ -263,6 +363,7 @@ export function addEntry(year, entry) {
       notes: entry.notes || '',
       updatedAt: new Date().toISOString(),
     };
+    if (entry.transactionKey) newEntry.transactionKey = entry.transactionKey;
     data.entries.push(newEntry);
     await writeEntriesFile(year, data);
     await syncAllScenarios(year);

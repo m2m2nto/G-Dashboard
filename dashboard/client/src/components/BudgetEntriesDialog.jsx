@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { BUTTON_ICON } from '../ui.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
@@ -63,6 +63,19 @@ export default function BudgetEntriesDialog({ open, onClose, entries, month, cat
     if (open) panelRef.current?.focus();
   }, [open]);
 
+  const [sortCol, setSortCol] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const toggleSort = (col) => {
+    if (sortCol === col) {
+      if (sortDir === 'asc') setSortDir('desc');
+      else { setSortCol(null); setSortDir('asc'); }
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  };
+
   if (!open) return null;
 
   // Filter entries
@@ -74,7 +87,21 @@ export default function BudgetEntriesDialog({ open, onClose, entries, month, cat
     const allowed = Array.isArray(scenario) ? scenario : [scenario];
     filtered = filtered.filter((e) => allowed.includes(e.scenario || 'consuntivo'));
   }
-  filtered = [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (sortCol) {
+    filtered = [...filtered].sort((a, b) => {
+      let va, vb;
+      if (sortCol === 'amount') {
+        va = a.amount ?? 0; vb = b.amount ?? 0;
+      } else {
+        va = (a[sortCol] || '').toLowerCase(); vb = (b[sortCol] || '').toLowerCase();
+      }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  } else {
+    filtered = [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }
 
   const entriesTotal = filtered.reduce((sum, e) => sum + (e.amount || 0), 0);
 
@@ -122,12 +149,29 @@ export default function BudgetEntriesDialog({ open, onClose, entries, month, cat
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-surface-dim text-on-surface-secondary sticky top-0">
-                <th className="px-3 py-2 text-left text-xs font-medium w-24">Scenario</th>
-                <th className="px-3 py-2 text-left text-xs font-medium w-24">Date</th>
-                <th className="px-3 py-2 text-left text-xs font-medium">Description</th>
-                <th className="px-3 py-2 text-right text-xs font-medium w-28">Amount</th>
-                <th className="px-3 py-2 text-center text-xs font-medium w-20">Payment</th>
-                <th className="px-3 py-2 text-left text-xs font-medium w-40">Notes</th>
+                {[
+                  { key: 'scenario', label: 'Scenario', align: 'left', w: 'w-24' },
+                  { key: 'date', label: 'Date', align: 'left', w: 'w-24' },
+                  { key: 'description', label: 'Description', align: 'left', w: '' },
+                  { key: 'amount', label: 'Amount', align: 'right', w: 'w-28' },
+                  { key: 'payment', label: 'Payment', align: 'center', w: 'w-20' },
+                  { key: 'notes', label: 'Notes', align: 'left', w: 'w-40' },
+                ].map((col) => (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key)}
+                    className={`px-3 py-2 text-${col.align} text-xs font-medium ${col.w} cursor-pointer select-none hover:text-on-surface group/th`}
+                  >
+                    <span className="inline-flex items-center gap-0.5">
+                      {col.label}
+                      {sortCol === col.key ? (
+                        <span className="material-symbols-outlined text-primary" style={{ fontSize: '14px' }}>{sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
+                      ) : (
+                        <span className="material-symbols-outlined opacity-0 group-hover/th:opacity-40" style={{ fontSize: '14px' }}>arrow_upward</span>
+                      )}
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border">

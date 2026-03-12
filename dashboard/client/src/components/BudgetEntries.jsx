@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import ConfirmDialog from './ConfirmDialog.jsx';
 import { CONTROL_PADDED, BUTTON_PRIMARY, BUTTON_GHOST, BUTTON_PILL_BASE, BUTTON_NEUTRAL } from '../ui.js';
 
@@ -54,7 +54,7 @@ const PAYMENT_OPTIONS = [
 
 const emptyForm = { date: '', description: '', category: '', budgetRow: null, amount: '', payment: 'inMonth', notes: '', scenario: 'consuntivo' };
 
-export default function BudgetEntries({ entries, year, budgetCategories, onAdd, onUpdate, onDelete, onSeed, loading, seededScenarios }) {
+export default function BudgetEntries({ entries, year, budgetCategories, onAdd, onUpdate, onDelete, onSeed, onRefresh, loading, seededScenarios }) {
   const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 10);
@@ -70,6 +70,8 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
   const [submitting, setSubmitting] = useState(false);
   const [seedTarget, setSeedTarget] = useState(null);
   const [seeding, setSeeding] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshAllTarget, setRefreshAllTarget] = useState(false);
   const descRef = useRef(null);
 
   const costs = budgetCategories.filter((c) => c.type === 'cost');
@@ -156,11 +158,60 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
     }
   };
 
-  let filtered = entries;
-  if (monthFilter) filtered = filtered.filter((e) => monthFromDate(e.date) === monthFilter);
-  if (categoryFilter) filtered = filtered.filter((e) => e.category === categoryFilter);
-  if (scenarioFilter) filtered = filtered.filter((e) => (e.scenario || 'consuntivo') === scenarioFilter);
-  filtered = [...filtered].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const handleRefreshAll = async () => {
+    if (!onRefresh) return;
+    setRefreshing(true);
+    setRefreshAllTarget(false);
+    try {
+      // Always refresh consuntivo (from generale sheet)
+      await onRefresh('consuntivo');
+      // Then refresh seeded scenarios
+      const seededList = ['certo', 'possibile', 'ottimistico'].filter((s) => (seededScenarios || {})[s]);
+      for (const s of seededList) {
+        await onRefresh(s);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const [sortCol, setSortCol] = useState('updatedAt');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const toggleSort = (col) => {
+    if (sortCol === col) {
+      if (sortDir === 'asc') setSortDir('desc');
+      else { setSortCol(null); setSortDir('asc'); }
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let rows = entries;
+    if (monthFilter) rows = rows.filter((e) => monthFromDate(e.date) === monthFilter);
+    if (categoryFilter) rows = rows.filter((e) => e.category === categoryFilter);
+    if (scenarioFilter) rows = rows.filter((e) => (e.scenario || 'consuntivo') === scenarioFilter);
+    if (sortCol) {
+      rows = [...rows].sort((a, b) => {
+        let va, vb;
+        if (sortCol === 'amount') {
+          va = a.amount ?? 0; vb = b.amount ?? 0;
+        } else if (sortCol === 'updatedAt') {
+          va = a.updatedAt || ''; vb = b.updatedAt || '';
+        } else if (sortCol === 'month') {
+          va = monthFromDate(a.date) || ''; vb = monthFromDate(b.date) || '';
+        } else {
+          va = (a[sortCol] || '').toLowerCase(); vb = (b[sortCol] || '').toLowerCase();
+        }
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return rows;
+  }, [entries, monthFilter, categoryFilter, scenarioFilter, sortCol, sortDir]);
 
   const CategorySelect = ({ value, onChange, id }) => (
     <select
@@ -225,13 +276,23 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
         <span className="text-sm text-on-surface-secondary">
           {loading ? '' : `${filtered.length} entries`}
         </span>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className={showForm ? BUTTON_NEUTRAL : BUTTON_PRIMARY}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{showForm ? 'close' : 'add'}</span>
-          {showForm ? 'Close' : 'New'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setRefreshAllTarget(true)}
+            disabled={refreshing}
+            className={BUTTON_NEUTRAL}
+          >
+            <span className={`material-symbols-outlined ${refreshing ? 'animate-spin' : ''}`} style={{ fontSize: '18px' }}>sync</span>
+            {refreshing ? 'Refreshing...' : 'Refresh from Excel'}
+          </button>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className={showForm ? BUTTON_NEUTRAL : BUTTON_PRIMARY}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{showForm ? 'close' : 'add'}</span>
+            {showForm ? 'Close' : 'New'}
+          </button>
+        </div>
       </div>
 
       {/* New entry form */}
@@ -399,15 +460,32 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
         <table className="min-w-full text-sm">
           <thead>
             <tr className="bg-surface-dim text-on-surface-secondary">
-              <th className="px-3 py-2 text-left text-xs font-medium w-24">Scenario</th>
-              <th className="px-3 py-2 text-left text-xs font-medium w-28">Date</th>
-              <th className="px-3 py-2 text-center text-xs font-medium w-14">Month</th>
-              <th className="px-3 py-2 text-left text-xs font-medium">Description</th>
-              <th className="px-3 py-2 text-left text-xs font-medium w-56">Category</th>
-              <th className="px-3 py-2 text-right text-xs font-medium w-28">Amount</th>
-              <th className="px-3 py-2 text-center text-xs font-medium w-20">Payment</th>
-              <th className="px-3 py-2 text-left text-xs font-medium w-40">Notes</th>
-              <th className="px-3 py-2 text-left text-xs font-medium w-32">Updated</th>
+              {[
+                { key: 'scenario', label: 'Scenario', align: 'left', w: 'w-24' },
+                { key: 'date', label: 'Date', align: 'left', w: 'w-28' },
+                { key: 'month', label: 'Month', align: 'center', w: 'w-14' },
+                { key: 'description', label: 'Description', align: 'left', w: '' },
+                { key: 'category', label: 'Category', align: 'left', w: 'w-56' },
+                { key: 'amount', label: 'Amount', align: 'right', w: 'w-28' },
+                { key: 'payment', label: 'Payment', align: 'center', w: 'w-20' },
+                { key: 'notes', label: 'Notes', align: 'left', w: 'w-40' },
+                { key: 'updatedAt', label: 'Updated', align: 'left', w: 'w-32' },
+              ].map((col) => (
+                <th
+                  key={col.key}
+                  onClick={() => toggleSort(col.key)}
+                  className={`px-3 py-2 text-${col.align} text-xs font-medium ${col.w} cursor-pointer select-none hover:text-on-surface group/th`}
+                >
+                  <span className="inline-flex items-center gap-0.5">
+                    {col.label}
+                    {sortCol === col.key ? (
+                      <span className="material-symbols-outlined text-primary" style={{ fontSize: '14px' }}>{sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'}</span>
+                    ) : (
+                      <span className="material-symbols-outlined opacity-0 group-hover/th:opacity-40" style={{ fontSize: '14px' }}>arrow_upward</span>
+                    )}
+                  </span>
+                </th>
+              ))}
               <th className="px-3 py-2 text-center text-xs font-medium w-24">Actions</th>
             </tr>
           </thead>
@@ -511,6 +589,12 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                     <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${SCENARIO_COLORS[entry.scenario || 'consuntivo']}`}>
                       {(entry.scenario || 'consuntivo').charAt(0).toUpperCase() + (entry.scenario || 'consuntivo').slice(1)}
                     </span>
+                    {entry.description === 'Excel adjustment' && (
+                      <span className="inline-flex items-center gap-0.5 ml-1 text-[9px] font-medium text-orange-700 bg-orange-50 px-1 py-0.5 rounded border border-orange-200">
+                        <span className="material-symbols-outlined" style={{ fontSize: '11px' }}>sync</span>
+                        adj
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs tabular-nums">{fmtDate(entry.date)}</td>
                   <td className="px-3 py-2 text-center text-xs font-medium text-on-surface-secondary">{monthFromDate(entry.date)}</td>
@@ -557,6 +641,15 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
         confirmLabel={seeding ? 'Importing...' : 'Import'}
         onConfirm={handleSeed}
         onCancel={() => setSeedTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={refreshAllTarget}
+        title="Refresh from Excel"
+        message={`This will compare entry totals against the Excel budget file for consuntivo${['certo', 'possibile', 'ottimistico'].some((s) => (seededScenarios || {})[s]) ? ` and seeded scenarios (${['certo', 'possibile', 'ottimistico'].filter((s) => (seededScenarios || {})[s]).join(', ')})` : ''}. Where values differ, adjustment entries will be created. Existing entries are preserved.`}
+        confirmLabel="Refresh"
+        onConfirm={handleRefreshAll}
+        onCancel={() => setRefreshAllTarget(false)}
       />
     </div>
   );

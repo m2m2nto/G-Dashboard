@@ -118,6 +118,9 @@ export const deleteBudgetEntry = (year, id) =>
 export const seedBudgetEntries = (year, scenario) =>
   request(`/budget-entries/${year}/seed/${encodeURIComponent(scenario)}`, { method: 'POST' });
 
+export const refreshBudgetEntries = (year, scenario) =>
+  request(`/budget-entries/${year}/refresh/${encodeURIComponent(scenario)}`, { method: 'POST' });
+
 export const getSettings = () => request('/settings');
 
 export const updateSettings = ({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles }) =>

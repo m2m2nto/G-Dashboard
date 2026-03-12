@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listEntries, addEntry, updateEntry, deleteEntry, seedEntries } from '../services/budgetEntries.js';
+import { listEntries, addEntry, updateEntry, deleteEntry, seedEntries, refreshFromExcel } from '../services/budgetEntries.js';
 import { BUDGET_SCENARIOS } from '../config.js';
 import { appendEntry as logActivity } from '../services/audit.js';
 
@@ -60,6 +60,21 @@ router.post('/:year/seed/:scenario', async (req, res) => {
     }
     const result = await seedEntries(year, scenario);
     logActivity({ action: 'budget.seed', year, details: { scenario, count: result.count } }).catch(() => {});
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/:year/refresh/:scenario', async (req, res) => {
+  try {
+    const { scenario } = req.params;
+    const year = req.params.year;
+    if (scenario !== 'consuntivo' && !BUDGET_SCENARIOS.includes(scenario)) {
+      return res.status(400).json({ error: `Invalid scenario. Must be one of: consuntivo, ${BUDGET_SCENARIOS.join(', ')}` });
+    }
+    const result = await refreshFromExcel(year, scenario);
+    logActivity({ action: 'budget.refresh', year, details: { scenario, created: result.created, skipped: result.skipped } }).catch(() => {});
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
