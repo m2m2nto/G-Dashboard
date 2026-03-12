@@ -984,8 +984,8 @@ export default function App() {
                 <BudgetGrid
                   data={budget}
                   year={globalYear}
-                  onConsuntivoClick={(month, category, value) => {
-                    setEntriesDialog({ month: month || null, category, scenario: 'consuntivo', expectedTotal: value ?? null });
+                  onConsuntivoClick={(month, category, value, scenario) => {
+                    setEntriesDialog({ month: month || null, category, scenario: scenario || 'consuntivo', expectedTotal: value ?? null });
                   }}
                   onAddEntry={handleAddBudgetEntry}
                 />

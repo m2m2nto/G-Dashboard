@@ -96,21 +96,19 @@ function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
             </td>
             {FIELDS.map((f) => {
               const v = f === 'diff' ? -row.annual[f] : row.annual[f];
-              if (f === 'consuntivo') {
+              if (f !== 'diff') {
                 return (
                   <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
-                    <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category, row.annual.consuntivo)} />
+                    <ConsuntivoLink value={row.annual[f]} onClick={() => onConsuntivoClick(null, row.category, row.annual[f], f)} />
                   </td>
                 );
               }
               return (
                 <td
                   key={f}
-                  className={`px-3 py-2 text-right text-sm tabular-nums ${
-                    f === 'diff' ? diffColor(v, isCost) : ''
-                  }`}
+                  className={`px-3 py-2 text-right text-sm tabular-nums ${diffColor(v, isCost)}`}
                 >
-                  {f === 'diff' && v !== 0
+                  {v !== 0
                     ? (v > 0 ? '+' : '') + fmt(v)
                     : fmt(v)}
                 </td>
@@ -272,21 +270,19 @@ function MonthlyDrillDown({ row, isCost, year, onClose, onConsuntivoClick, onAdd
                   </td>
                   {FIELDS.map((f) => {
                     const v = f === 'diff' ? -row.months[m][f] : row.months[m][f];
-                    if (f === 'consuntivo') {
+                    if (f !== 'diff') {
                       return (
                         <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
-                          <ConsuntivoLink value={row.months[m].consuntivo} onClick={() => onConsuntivoClick(m, row.category, row.months[m].consuntivo)} />
+                          <ConsuntivoLink value={row.months[m][f]} onClick={() => onConsuntivoClick(m, row.category, row.months[m][f], f)} />
                         </td>
                       );
                     }
                     return (
                       <td
                         key={f}
-                        className={`px-2 py-1.5 text-right text-xs tabular-nums ${
-                          f === 'diff' ? `border-l border-surface-border ${diffColor(v, isCost)}` : ''
-                        }`}
+                        className={`px-2 py-1.5 text-right text-xs tabular-nums border-l border-surface-border ${diffColor(v, isCost)}`}
                       >
-                        {f === 'diff' && v !== 0
+                        {v !== 0
                           ? (v > 0 ? '+' : '') + fmt(v)
                           : fmt(v)}
                       </td>
@@ -479,7 +475,7 @@ function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
               </td>
             ))}
             <td className="px-2 py-0.5 text-right text-xs border-l border-surface-border tabular-nums">
-              <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category, row.annual.consuntivo)} />
+              <ConsuntivoLink value={row.annual.consuntivo} onClick={() => onConsuntivoClick(null, row.category, row.annual.consuntivo, 'consuntivo')} />
             </td>
           </tr>
           {/* Δ (diff: possibile - consuntivo) */}

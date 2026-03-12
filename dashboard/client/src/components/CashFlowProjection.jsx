@@ -10,6 +10,7 @@ const SCENARIOS = ['certo', 'possibile', 'ottimistico'];
 const SCENARIO_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico' };
 const FIELDS = ['certo', 'possibile', 'ottimistico', 'consuntivo', 'diff'];
 const FIELD_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico', consuntivo: 'Consuntivo', diff: 'Δ' };
+const ENTRY_BG = 'bg-accent-light';
 
 function fmt(v) {
   if (v == null || v === 0) return '\u2014';
@@ -227,27 +228,27 @@ function buildBudgetProjection(budget, entries, txConsuntivo) {
     budgetSection.map((item) => {
       const months = {};
       const annual = { certo: 0, possibile: 0, ottimistico: 0, consuntivo: 0, diff: 0 };
-      const certoFromEntries = {};
+      const fromEntries = {};
 
       MONTHS.forEach((m, i) => {
         const bm = item.months[m] || {};
         let certo = bm.certo || 0;
-        let fromEntries = false;
 
         // Entries replace Excel value — one source or the other, not both
-        const hasEntry = certoEntryPresent.has(item.row) && certoEntryPresent.get(item.row).has(i);
-        if (hasEntry) {
+        const hasCertoEntry = certoEntryPresent.has(item.row) && certoEntryPresent.get(item.row).has(i);
+        if (hasCertoEntry) {
           certo = certoAddByRow.get(item.row)?.[i] || 0;
-          fromEntries = true;
         }
 
         // Possibile/ottimistico: use entries (with payment offset) when available, else Excel
         let possibile = bm.possibile || 0;
-        if (possibileEntryPresent.has(item.row) && possibileEntryPresent.get(item.row).has(i)) {
+        const hasPossibileEntry = possibileEntryPresent.has(item.row) && possibileEntryPresent.get(item.row).has(i);
+        if (hasPossibileEntry) {
           possibile = possibileByRow.get(item.row)?.[i] || 0;
         }
         let ottimistico = bm.ottimistico || 0;
-        if (ottimisticoEntryPresent.has(item.row) && ottimisticoEntryPresent.get(item.row).has(i)) {
+        const hasOttimisticoEntry = ottimisticoEntryPresent.has(item.row) && ottimisticoEntryPresent.get(item.row).has(i);
+        if (hasOttimisticoEntry) {
           ottimistico = ottimisticoByRow.get(item.row)?.[i] || 0;
         }
         let consuntivo = 0;
@@ -257,7 +258,7 @@ function buildBudgetProjection(budget, entries, txConsuntivo) {
         const diff = possibile - consuntivo;
 
         months[m] = { certo, possibile, ottimistico, consuntivo, diff };
-        certoFromEntries[m] = fromEntries;
+        fromEntries[m] = { certo: hasCertoEntry, possibile: hasPossibileEntry, ottimistico: hasOttimisticoEntry };
         annual.certo += certo;
         annual.possibile += possibile;
         annual.ottimistico += ottimistico;
@@ -265,7 +266,13 @@ function buildBudgetProjection(budget, entries, txConsuntivo) {
       });
       annual.diff = annual.possibile - annual.consuntivo;
 
-      return { category: item.category, row: item.row, months, annual, certoFromEntries };
+      // Per-scenario: does any month come from entries?
+      const annualFromEntries = {};
+      for (const s of SCENARIOS) {
+        annualFromEntries[s] = MONTHS.some(m => fromEntries[m][s]);
+      }
+
+      return { category: item.category, row: item.row, months, annual, fromEntries, annualFromEntries };
     });
 
   const costs = buildRows(budget.costs);
@@ -491,9 +498,10 @@ function CFMonthlyDrillDown({ row, isCost, onClose, onCellClick }) {
                 <td className="px-2 py-1.5 text-xs font-medium text-on-surface-secondary">{m}</td>
                 {FIELDS.map((f) => {
                   const v = f === 'diff' ? -row.months[m][f] : row.months[m][f];
+                  const bg = row.fromEntries?.[m]?.[f] ? ENTRY_BG : '';
                   if (f !== 'diff' && onCellClick) {
                     return (
-                      <td key={f} className="px-2 py-1.5 text-right text-xs tabular-nums">
+                      <td key={f} className={`px-2 py-1.5 text-right text-xs tabular-nums ${bg}`}>
                         <ValueLink value={row.months[m][f]} onClick={() => onCellClick(m, row.category, f, row.months[m][f])} />
                       </td>
                     );
@@ -502,7 +510,7 @@ function CFMonthlyDrillDown({ row, isCost, onClose, onCellClick }) {
                     <td
                       key={f}
                       className={`px-2 py-1.5 text-right text-xs tabular-nums ${
-                        f === 'diff' ? `border-l border-surface-border ${diffColor(v, isCost)}` : ''
+                        f === 'diff' ? `border-l border-surface-border ${diffColor(v, isCost)}` : bg
                       }`}
                     >
                       {f === 'diff' && v !== 0
@@ -528,6 +536,7 @@ function BudgetAnnualSummary({ projection, onCellClick }) {
   const [expandedRow, setExpandedRow] = useState(null);
   const colSpan = FIELDS.length + 1;
   const toggle = (key) => setExpandedRow((prev) => (prev === key ? null : key));
+  const entryBg = (row, field) => row.annualFromEntries?.[field] ? ENTRY_BG : '';
 
   const renderCategoryRows = (rows, isCost, section) =>
     rows.map((row) => {
@@ -549,9 +558,10 @@ function BudgetAnnualSummary({ projection, onCellClick }) {
             </td>
             {FIELDS.map((f) => {
               const v = f === 'diff' ? -row.annual[f] : row.annual[f];
+              const bg = entryBg(row, f);
               if (f !== 'diff' && onCellClick) {
                 return (
-                  <td key={f} className="px-3 py-2 text-right text-sm tabular-nums">
+                  <td key={f} className={`px-3 py-2 text-right text-sm tabular-nums ${bg}`}>
                     <ValueLink value={row.annual[f]} onClick={() => onCellClick(null, row.category, f, row.annual[f])} />
                   </td>
                 );
@@ -560,7 +570,7 @@ function BudgetAnnualSummary({ projection, onCellClick }) {
                 <td
                   key={f}
                   className={`px-3 py-2 text-right text-sm tabular-nums ${
-                    f === 'diff' ? diffColor(v, isCost) : ''
+                    f === 'diff' ? diffColor(v, isCost) : bg
                   }`}
                 >
                   {f === 'diff' && v !== 0
@@ -617,51 +627,57 @@ function BudgetAnnualSummary({ projection, onCellClick }) {
   );
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm border-collapse">
-        <thead>
-          <tr className="bg-surface-dim text-on-surface-secondary">
-            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Categoria</th>
-            {FIELDS.map((f) => (
-              <th key={f} className={`px-3 py-2 text-right text-xs font-medium w-28 sticky top-0 z-10 bg-surface-dim ${f === 'diff' ? 'border-l border-surface-border' : ''}`}>
-                {FIELD_LABELS[f]}
-              </th>
-            ))}
-          </tr>
-        </thead>
+    <div>
+      <div className="px-4 py-1.5 flex items-center gap-1.5 text-[11px] text-on-surface-tertiary">
+        <span className={`inline-block w-2.5 h-2.5 rounded-sm ${ENTRY_BG} border border-accent/20`}></span>
+        Valori da budget entries (sovrascrivono Excel)
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-surface-dim text-on-surface-secondary">
+              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Categoria</th>
+              {FIELDS.map((f) => (
+                <th key={f} className={`px-3 py-2 text-right text-xs font-medium w-28 sticky top-0 z-10 bg-surface-dim ${f === 'diff' ? 'border-l border-surface-border' : ''}`}>
+                  {FIELD_LABELS[f]}
+                </th>
+              ))}
+            </tr>
+          </thead>
 
-        <tbody>
-          <tr className="bg-surface-dim">
-            <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>USCITE</td>
-          </tr>
-        </tbody>
-        {renderCategoryRows(projection.costs, true, 'cost')}
-        {renderTotalRow('TOTALE USCITE', projection.totals.totalCosts, true)}
-
-        <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
-
-        <tbody>
-          <tr className="bg-surface-dim">
-            <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>ENTRATE</td>
-          </tr>
-        </tbody>
-        {renderCategoryRows(projection.revenues, false, 'rev')}
-        {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues, false)}
-
-        {projection.financing?.length > 0 && (<>
-          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>USCITE</td>
             </tr>
           </tbody>
-          {renderCategoryRows(projection.financing, false, 'fin')}
-        </>)}
+          {renderCategoryRows(projection.costs, true, 'cost')}
+          {renderTotalRow('TOTALE USCITE', projection.totals.totalCosts, true)}
 
-        <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
-        {renderMarginRow('SALDO NETTO', projection.totals.margin)}
-      </table>
+          <tbody>
+            <tr className="bg-surface-dim">
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>ENTRATE</td>
+            </tr>
+          </tbody>
+          {renderCategoryRows(projection.revenues, false, 'rev')}
+          {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues, false)}
+
+          {projection.financing?.length > 0 && (<>
+            <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+            <tbody>
+              <tr className="bg-surface-dim">
+                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+              </tr>
+            </tbody>
+            {renderCategoryRows(projection.financing, false, 'fin')}
+          </>)}
+
+          <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
+
+          {renderMarginRow('SALDO NETTO', projection.totals.margin)}
+        </table>
+      </div>
     </div>
   );
 }
@@ -797,18 +813,19 @@ function BudgetMonthlyDetail({ projection, onCellClick }) {
           {row.category}
         </td>
         {MONTHS.map((m) => {
+          const bg = row.fromEntries?.[m]?.[scenario] ? ENTRY_BG : '';
           if (onCellClick) {
             return (
-              <td key={m} className="px-2 py-1.5 text-right text-xs tabular-nums">
+              <td key={m} className={`px-2 py-1.5 text-right text-xs tabular-nums ${bg}`}>
                 <ValueLink value={row.months[m][scenario]} onClick={() => onCellClick(m, row.category, scenario, row.months[m][scenario])} />
               </td>
             );
           }
           return (
-            <td key={m} className="px-2 py-1.5 text-right text-xs tabular-nums">{fmt(row.months[m][scenario])}</td>
+            <td key={m} className={`px-2 py-1.5 text-right text-xs tabular-nums ${bg}`}>{fmt(row.months[m][scenario])}</td>
           );
         })}
-        <td className="px-2 py-1.5 text-right text-xs border-l border-surface-border tabular-nums font-medium">
+        <td className={`px-2 py-1.5 text-right text-xs border-l border-surface-border tabular-nums font-medium ${row.annualFromEntries?.[scenario] ? ENTRY_BG : ''}`}>
           {onCellClick
             ? <ValueLink value={row.annual[scenario]} onClick={() => onCellClick(null, row.category, scenario, row.annual[scenario])} />
             : fmt(row.annual[scenario])
@@ -846,7 +863,7 @@ function BudgetMonthlyDetail({ projection, onCellClick }) {
 
   return (
     <div>
-      <div className="px-4 py-2 flex items-center gap-2">
+      <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-on-surface-secondary font-medium mr-1">Scenario:</span>
         {SCENARIOS.map((s) => (
           <button
@@ -861,6 +878,10 @@ function BudgetMonthlyDetail({ projection, onCellClick }) {
             {SCENARIO_LABELS[s]}
           </button>
         ))}
+        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-on-surface-tertiary">
+          <span className={`inline-block w-2.5 h-2.5 rounded-sm ${ENTRY_BG} border border-accent/20`}></span>
+          Da budget entries
+        </span>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm border-collapse">
