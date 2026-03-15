@@ -133,6 +133,7 @@ export default function App() {
   const [chartsYearly, setChartsYearly] = useState(null);
   const [chartsYoYQoQ, setChartsYoYQoQ] = useState(null);
   const [chartsLoading, setChartsLoading] = useState(false);
+  const [chartsMonthly, setChartsMonthly] = useState([]);
 
   // ── Activity ──
   const [activityLog, setActivityLog] = useState([]);
@@ -342,21 +343,54 @@ export default function App() {
     if (section === 'cashflow' && (cfView === 'transactions' || cfView === 'mapping')) loadCfBudgetMap();
   }, [section, cfView, loadCfBudgetMap]);
 
+  const MONTHS_IT = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
+
   const loadCharts = useCallback(async () => {
     setChartsLoading(true);
     try {
-      const [yearly, yoyQoQ] = await Promise.all([getYearlySummary(), getYoYQoQ()]);
+      const prevYear = Number(globalYear) - 1;
+      const [yearly, yoyQoQ, cfCurrent, cfPrev] = await Promise.all([
+        getYearlySummary(),
+        getYoYQoQ(),
+        getCashFlow(globalYear).catch(() => null),
+        getCashFlow(prevYear).catch(() => null),
+      ]);
       setChartsYearly(yearly);
       setChartsYoYQoQ(yoyQoQ);
+
+      // Build last 12 months of monthly data
+      const buildMonths = (cf, yr) => {
+        if (!cf?.totals) return [];
+        return MONTHS_IT.map((m, i) => ({
+          label: `${m} ${String(yr).slice(2)}`,
+          monthIdx: i,
+          year: yr,
+          revenue: Math.abs(cf.totals.totalRevenues?.months?.[m] || 0),
+          costs: Math.abs(cf.totals.totalCosts?.months?.[m] || 0),
+          financing: Math.abs(cf.totals.totalFinancing?.months?.[m] || 0),
+          margin: cf.totals.margin?.months?.[m] || 0,
+        }));
+      };
+      const prevMonths = buildMonths(cfPrev, prevYear);
+      const currMonths = buildMonths(cfCurrent, Number(globalYear));
+      const allMonths = [...prevMonths, ...currMonths];
+
+      // Slice last 12 months up to current month
+      const now = new Date();
+      const currentYr = now.getFullYear();
+      const currentMi = now.getMonth(); // 0-based
+      const endIdx = allMonths.findIndex((m) => m.year === currentYr && m.monthIdx === currentMi);
+      const end = endIdx >= 0 ? endIdx + 1 : allMonths.length;
+      const start = Math.max(0, end - 12);
+      setChartsMonthly(allMonths.slice(start, end));
     } catch (err) {
       pushToast('error', 'Failed to load charts: ' + err.message);
     }
     setChartsLoading(false);
-  }, [pushToast]);
+  }, [pushToast, globalYear]);
 
   useEffect(() => {
-    if (disabledSections.has('analytics')) return;
-    if (section === 'analytics') loadCharts();
+    if (section === 'home' || (section === 'analytics' && !disabledSections.has('analytics'))) loadCharts();
   }, [section, disabledSections, loadCharts]);
 
   const loadActivity = useCallback(async () => {
@@ -770,6 +804,7 @@ export default function App() {
         {section === 'home' && (
           <DashboardHome
             year={globalYear}
+            monthlyData={chartsMonthly}
             onNavigate={handleNavigate}
             onOpenNewTransaction={() => { setSection('cashflow'); setCfView('transactions'); setShowForm(true); }}
             onSyncCashFlow={async () => {
@@ -1100,7 +1135,7 @@ export default function App() {
             <SubTabBar tabs={ANALYTICS_SUB_TABS} active={analyticsView} onChange={setAnalyticsView} />
 
             {analyticsView === 'cashflow' && (
-              <ChartsView yearly={chartsYearly} yoyQoQ={chartsYoYQoQ} loading={chartsLoading} />
+              <ChartsView yearly={chartsYearly} yoyQoQ={chartsYoYQoQ} monthlyData={chartsMonthly} loading={chartsLoading} />
             )}
 
             {analyticsView === 'budget' && (

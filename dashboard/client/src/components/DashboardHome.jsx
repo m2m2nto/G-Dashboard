@@ -2,8 +2,49 @@ import { useState, useEffect, useCallback } from 'react';
 import MetricCard from './MetricCard.jsx';
 import { BUTTON_PRIMARY, BUTTON_NEUTRAL } from '../ui.js';
 import { getYearlySummary, getCashFlow, getBudget, getActivity } from '../api.js';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 
 const EUR = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
+const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
+
+const CHART_COLORS = {
+  revenue: '#1e8e3e',
+  costs: '#d93025',
+  margin: '#2E6BAD',
+  financing: '#f9ab00',
+};
+
+function fmtK(v) {
+  if (v == null) return '-';
+  const n = Number(v);
+  if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return n.toLocaleString('de-DE');
+}
+
+function HomeChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white rounded-xl shadow-elevation-3 px-4 py-3 border border-surface-border text-sm">
+      <p className="font-medium text-on-surface mb-1.5">{label}</p>
+      {payload.map((entry) => (
+        <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+          <span className="text-on-surface-secondary">{entry.name}:</span>
+          <span className="font-medium text-on-surface">{EUR.format(entry.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   month: 'short',
@@ -26,7 +67,7 @@ const ACTION_BADGES = {
   'budget.refresh': { label: 'Refresh', color: 'bg-orange-100 text-orange-700' },
 };
 
-export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, onSyncCashFlow }) {
+export default function DashboardHome({ year, monthlyData, onNavigate, onOpenNewTransaction, onSyncCashFlow }) {
   const [metrics, setMetrics] = useState(null);
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,18 +87,18 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
 
       if (cfData) {
         const currentMonthIdx = new Date().getMonth(); // 0-based
-        // Sum up to current month (YTD)
+        // Sum up to current month (YTD) — months are keyed by Italian abbreviation
         if (cfData.revenues) {
           cfData.revenues.forEach((row) => {
             for (let m = 0; m <= currentMonthIdx && m < 12; m++) {
-              totalRevenue += Math.abs(row.months?.[m]?.value || 0);
+              totalRevenue += Math.abs(row.months?.[MONTHS[m]] || 0);
             }
           });
         }
         if (cfData.costs) {
           cfData.costs.forEach((row) => {
             for (let m = 0; m <= currentMonthIdx && m < 12; m++) {
-              totalCosts += Math.abs(row.months?.[m]?.value || 0);
+              totalCosts += Math.abs(row.months?.[MONTHS[m]] || 0);
             }
           });
         }
@@ -65,18 +106,22 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
 
       const operatingMargin = totalRevenue - totalCosts;
 
-      // Budget variance — compare actual costs vs budget
+      // Budget variance — compare actual costs vs possibile budget (YTD)
       let budgetVariance = null;
+      let budgetVariancePct = null;
       if (budgetData?.costs) {
+        const currentMonthIdx = new Date().getMonth();
         let budgetTotal = 0;
         budgetData.costs.forEach((row) => {
           const vals = row.months || {};
-          Object.values(vals).forEach((v) => {
-            budgetTotal += Math.abs(v?.value || v || 0);
-          });
+          for (let m = 0; m <= currentMonthIdx && m < 12; m++) {
+            const cell = vals[MONTHS[m]];
+            budgetTotal += Math.abs(cell?.possibile || 0);
+          }
         });
         if (budgetTotal > 0) {
-          budgetVariance = ((totalCosts - budgetTotal) / budgetTotal) * 100;
+          budgetVariance = totalCosts - budgetTotal;
+          budgetVariancePct = (budgetVariance / budgetTotal) * 100;
         }
       }
 
@@ -85,7 +130,10 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
         costs: totalCosts,
         margin: operatingMargin,
         budgetVariance,
+        budgetVariancePct,
       });
+
+
 
       setRecentActivity(activity.slice(0, 5));
     } catch {
@@ -155,14 +203,36 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
         <MetricCard
           title="Budget Variance"
           value={metrics?.budgetVariance}
-          format="percent"
           icon="savings"
+          trend={metrics?.budgetVariancePct}
           subtitle={metrics?.budgetVariance != null
             ? (metrics.budgetVariance <= 0 ? 'under budget' : 'over budget')
             : 'no budget data'}
           onClick={() => onNavigate('budget')}
         />
       </div>
+
+      {/* Monthly Trends */}
+      {monthlyData?.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-elevation-1 p-6">
+          <h2 className="text-base font-semibold text-on-surface mb-4">
+            Monthly Trends
+          </h2>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={monthlyData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#dadce0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#5f6368' }} />
+              <YAxis tick={{ fontSize: 12, fill: '#5f6368' }} tickFormatter={fmtK} width={60} />
+              <Tooltip content={<HomeChartTooltip />} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 13 }} />
+              <Line dataKey="revenue" name="Revenue" stroke={CHART_COLORS.revenue} strokeWidth={2.5} dot={{ r: 4, fill: CHART_COLORS.revenue }} type="monotone" />
+              <Line dataKey="costs" name="Costs" stroke={CHART_COLORS.costs} strokeWidth={2.5} dot={{ r: 4, fill: CHART_COLORS.costs }} type="monotone" />
+              <Line dataKey="financing" name="Finanziamento Soci" stroke={CHART_COLORS.financing} strokeWidth={2.5} dot={{ r: 4, fill: CHART_COLORS.financing }} type="monotone" />
+              <Line dataKey="margin" name="Margin" stroke={CHART_COLORS.margin} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: CHART_COLORS.margin }} type="monotone" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Bottom row: Recent Activity + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -194,7 +264,9 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
                       {badge.label}
                     </span>
                     <span className="text-sm text-on-surface truncate">
-                      {entry.details?.transaction || entry.details?.description || entry.details?.element || entry.action}
+                      {entry.action === 'budget.refresh'
+                        ? `${entry.details?.scenario} — ${entry.details?.created || 0} adjustments`
+                        : (entry.details?.transaction || entry.details?.description || entry.details?.element || entry.action)}
                     </span>
                   </div>
                 );
@@ -217,25 +289,11 @@ export default function DashboardHome({ year, onNavigate, onOpenNewTransaction, 
               New Transaction
             </button>
             <button
-              onClick={onSyncCashFlow}
-              className={`${BUTTON_NEUTRAL} w-full justify-center`}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>sync</span>
-              Sync Cash Flow
-            </button>
-            <button
               onClick={() => onNavigate('budget-entries')}
               className={`${BUTTON_NEUTRAL} w-full justify-center`}
             >
               <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>edit_note</span>
-              Add New Entry
-            </button>
-            <button
-              onClick={() => onNavigate('analytics')}
-              className={`${BUTTON_NEUTRAL} w-full justify-center`}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>bar_chart</span>
-              View Analytics
+              New Entry
             </button>
           </div>
         </div>

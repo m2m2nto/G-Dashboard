@@ -100,7 +100,7 @@ function SkeletonCard() {
   );
 }
 
-export default function ChartsView({ yearly, yoyQoQ, loading }) {
+export default function ChartsView({ yearly, yoyQoQ, monthlyData, loading }) {
   if (loading) {
     return (
       <div className="space-y-6">
@@ -135,7 +135,7 @@ export default function ChartsView({ yearly, yoyQoQ, loading }) {
         .filter((d) => d && (d.revenue || d.costs))
     : [];
 
-  // --- Chart 2: Quarterly Trends ---
+  // --- Chart 3: Quarterly Trends ---
   const qoqData = yoyQoQ?.qoq?.length
     ? yoyQoQ.qoq.map((d) => ({
         quarter: d.quarter,
@@ -203,7 +203,37 @@ export default function ChartsView({ yearly, yoyQoQ, loading }) {
         </div>
       )}
 
-      {/* Chart 2: Quarterly Trends */}
+      {/* Chart 2: Monthly Trends (last 12 months) */}
+      {monthlyData?.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-elevation-1 p-6">
+          <h2 className="text-base font-semibold text-on-surface mb-4">
+            Monthly Trends
+          </h2>
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={monthlyData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#dadce0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#5f6368' }} />
+              <YAxis
+                tick={{ fontSize: 12, fill: '#5f6368' }}
+                tickFormatter={fmtK}
+                width={60}
+              />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend
+                iconType="circle"
+                iconSize={8}
+                wrapperStyle={{ fontSize: 13 }}
+              />
+              <Line dataKey="revenue" name="Revenue" stroke={COLORS.revenue} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.revenue }} type="monotone" />
+              <Line dataKey="costs" name="Costs" stroke={COLORS.costs} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.costs }} type="monotone" />
+              <Line dataKey="financing" name="Finanziamento Soci" stroke={COLORS.financing} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.financing }} type="monotone" />
+              <Line dataKey="margin" name="Margin" stroke={COLORS.margin} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: COLORS.margin }} type="monotone" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Chart 3: Quarterly Trends */}
       {qoqData.length > 0 && (
         <div className="bg-white rounded-2xl shadow-elevation-1 p-6">
           <h2 className="text-base font-semibold text-on-surface mb-4">
