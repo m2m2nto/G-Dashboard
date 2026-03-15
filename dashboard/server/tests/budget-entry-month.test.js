@@ -8,10 +8,17 @@ import assert from 'node:assert/strict';
 
 const PAYMENT_OFFSET = { inMonth: 0, '30days': 1, '60days': 2 };
 
-// Budget cell key logic (from budgetEntries.js entryCellKeys + buildAggregation)
-// Budget = competenza: uses the date's month, NO payment offset
-function budgetCellMonth(entry) {
+// Effective month helper (from budgetEntries.js)
+// competencyMonth overrides date month for budget placement
+function effectiveMonth(entry) {
+  if (entry.competencyMonth != null) return entry.competencyMonth;
   return parseInt(entry.date.slice(5, 7), 10) - 1;
+}
+
+// Budget cell key logic (from budgetEntries.js entryCellKeys + buildAggregation)
+// Budget = competenza: uses effectiveMonth (competencyMonth or date month), NO payment offset
+function budgetCellMonth(entry) {
+  return effectiveMonth(entry);
 }
 
 // Cash flow aggregation logic (from CashFlowProjection.jsx aggregateScenario)
@@ -105,5 +112,38 @@ describe('budget entry month assignment', () => {
     const cfMonth = cashFlowMonth(entry30days);
     assert.notEqual(bMonth, cfMonth, 'budget (competenza) and CF (cassa) months should differ for 30-day payment');
     assert.equal(cfMonth - bMonth, 1, 'CF month should be 1 month after budget month for 30-day payment');
+  });
+
+  // --- competencyMonth tests ---
+
+  it('competencyMonth overrides date month for budget placement', () => {
+    // Entry paid in Feb but belongs to Jan budget
+    const entry = { date: '2026-02-15', payment: 'inMonth', budgetRow: 8, amount: 500, competencyMonth: 0 };
+    assert.equal(budgetCellMonth(entry), 0, 'budget should use GEN (competencyMonth) not FEB (date)');
+  });
+
+  it('competencyMonth does not affect cash flow month', () => {
+    // Cash flow always uses date + payment offset, ignoring competencyMonth
+    const entry = { date: '2026-02-15', payment: '30days', budgetRow: 8, amount: 500, competencyMonth: 0 };
+    assert.equal(cashFlowMonth(entry), 2, 'cash flow should use MAR (FEB + 30 days), ignoring competencyMonth');
+  });
+
+  it('no competencyMonth falls back to date month', () => {
+    const entry = { date: '2026-05-01', payment: 'inMonth', budgetRow: 3, amount: 100 };
+    assert.equal(effectiveMonth(entry), 4, 'should use MAG (date month index 4)');
+  });
+
+  it('competencyMonth=0 correctly maps to GEN', () => {
+    const entry = { date: '2026-12-15', payment: 'inMonth', budgetRow: 5, amount: 200, competencyMonth: 0 };
+    assert.equal(effectiveMonth(entry), 0, 'competencyMonth 0 = GEN');
+  });
+
+  it('stale offset cell uses competencyMonth as base', () => {
+    // When competencyMonth is set, the stale offset should be based on effectiveMonth
+    const entry = { date: '2026-02-15', payment: '30days', budgetRow: 8, amount: 500, competencyMonth: 0 };
+    const month = effectiveMonth(entry);
+    const offset = PAYMENT_OFFSET[entry.payment] || 0;
+    const staleMonth = offset > 0 ? month + offset : null;
+    assert.equal(staleMonth, 1, 'stale cell should be FEB (GEN + 30 days offset)');
   });
 });

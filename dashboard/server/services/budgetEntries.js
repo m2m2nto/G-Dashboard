@@ -12,6 +12,13 @@ const VALID_PAYMENTS = ['inMonth', '30days', '60days'];
 const PAYMENT_OFFSET = { inMonth: 0, '30days': 1, '60days': 2 };
 const VALID_SCENARIOS = ['consuntivo', ...BUDGET_SCENARIOS]; // consuntivo, certo, possibile, ottimistico
 
+// Returns the 0-based month index where this entry's amount belongs in the budget grid.
+// If competencyMonth is set, it overrides the date's month (accrual vs cash timing).
+function effectiveMonth(entry) {
+  if (entry.competencyMonth != null) return entry.competencyMonth;
+  return parseInt(entry.date.slice(5, 7), 10) - 1;
+}
+
 function getEntriesDir() {
   return join(getDataDir(), '.gl-data');
 }
@@ -97,6 +104,12 @@ function validateEntry(entry, year) {
   if (entry.scenario && !VALID_SCENARIOS.includes(entry.scenario)) {
     throw new Error(`scenario must be one of: ${VALID_SCENARIOS.join(', ')}`);
   }
+  if (entry.competencyMonth != null) {
+    const cm = Number(entry.competencyMonth);
+    if (!Number.isInteger(cm) || cm < 0 || cm > 11) {
+      throw new Error('competencyMonth must be an integer 0–11');
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -105,15 +118,14 @@ function validateEntry(entry, year) {
 
 // Compute the Excel cell key(s) an entry maps to: "budgetRow-monthIndex"
 function entryCellKeys(entry) {
-  // Budget = competenza: use the date's month, no payment offset
-  const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
-  if (baseMonth > 11) return [];
+  const month = effectiveMonth(entry);
+  if (month < 0 || month > 11) return [];
   const scenario = entry.scenario || 'consuntivo';
-  const result = [{ scenario, key: `${entry.budgetRow}-${baseMonth}` }];
+  const result = [{ scenario, key: `${entry.budgetRow}-${month}` }];
   // Also mark the old offset cell for cleanup (legacy data may exist there)
   const offset = PAYMENT_OFFSET[entry.payment] || 0;
   if (offset > 0) {
-    const offsetMonth = baseMonth + offset;
+    const offsetMonth = month + offset;
     if (offsetMonth <= 11) {
       result.push({ scenario, key: `${entry.budgetRow}-${offsetMonth}` });
     }
@@ -141,10 +153,9 @@ async function syncAllScenarios(year, staleCells = []) {
       agg.set(key, 0);
     }
     for (const entry of entries) {
-      // Budget = competenza: use the date's month, no payment offset
-      const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1; // 0-based
-      if (baseMonth > 11) continue;
-      const key = `${entry.budgetRow}-${baseMonth}`;
+      const month = effectiveMonth(entry);
+      if (month < 0 || month > 11) continue;
+      const key = `${entry.budgetRow}-${month}`;
       agg.set(key, (agg.get(key) || 0) + entry.amount);
     }
     return agg;
@@ -160,8 +171,8 @@ async function syncAllScenarios(year, staleCells = []) {
   for (const entry of data.entries) {
     const offset = PAYMENT_OFFSET[entry.payment] || 0;
     if (offset > 0) {
-      const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
-      const offsetMonth = baseMonth + offset;
+      const month = effectiveMonth(entry);
+      const offsetMonth = month + offset;
       if (offsetMonth <= 11) {
         const s = entry.scenario || 'consuntivo';
         if (staleByScenario[s]) staleByScenario[s].push(`${entry.budgetRow}-${offsetMonth}`);
@@ -251,9 +262,9 @@ export function refreshFromExcel(year, scenario) {
     const entryTotals = new Map();
     for (const entry of data.entries) {
       if ((entry.scenario || 'consuntivo') !== scenario) continue;
-      const baseMonth = parseInt(entry.date.slice(5, 7), 10) - 1;
-      if (baseMonth > 11) continue;
-      const key = `${entry.budgetRow}-${baseMonth}`;
+      const month = effectiveMonth(entry);
+      if (month < 0 || month > 11) continue;
+      const key = `${entry.budgetRow}-${month}`;
       entryTotals.set(key, (entryTotals.get(key) || 0) + entry.amount);
     }
 
@@ -363,6 +374,7 @@ export function addEntry(year, entry) {
       notes: entry.notes || '',
       updatedAt: new Date().toISOString(),
     };
+    if (entry.competencyMonth != null) newEntry.competencyMonth = Number(entry.competencyMonth);
     if (entry.transactionKey) newEntry.transactionKey = entry.transactionKey;
     data.entries.push(newEntry);
     await writeEntriesFile(year, data);
@@ -395,6 +407,12 @@ export function updateEntry(year, id, patch) {
       notes: merged.notes || '',
       updatedAt: new Date().toISOString(),
     };
+    // Persist or clear competencyMonth
+    if (merged.competencyMonth != null) {
+      data.entries[idx].competencyMonth = Number(merged.competencyMonth);
+    } else {
+      delete data.entries[idx].competencyMonth;
+    }
 
     await writeEntriesFile(year, data);
     await syncAllScenarios(year, oldCells);

@@ -636,7 +636,7 @@ const BUDGET_MARGIN_ROW_FE = 27;
 // ---------------------------------------------------------------------------
 
 export default function BudgetGrid({ data, year, onConsuntivoClick, onAddEntry }) {
-  const [view, setView] = useState('annual');
+  const [view, setView] = useState('monthly');
   const handleClick = onConsuntivoClick || (() => {});
 
   if (!data) return <BudgetSkeleton />;
@@ -645,16 +645,6 @@ export default function BudgetGrid({ data, year, onConsuntivoClick, onAddEntry }
     <div>
       {/* Sub-view toggle */}
       <div className="px-4 py-2 flex items-center gap-2 border-b border-surface-border">
-        <button
-          onClick={() => setView('annual')}
-          className={`${BUTTON_PILL_BASE} ${
-            view === 'annual'
-              ? 'bg-primary-light text-primary border-primary/30'
-              : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-          }`}
-        >
-          Annual Summary
-        </button>
         <button
           onClick={() => setView('monthly')}
           className={`${BUTTON_PILL_BASE} ${
@@ -665,10 +655,20 @@ export default function BudgetGrid({ data, year, onConsuntivoClick, onAddEntry }
         >
           Monthly Detail
         </button>
+        <button
+          onClick={() => setView('annual')}
+          className={`${BUTTON_PILL_BASE} ${
+            view === 'annual'
+              ? 'bg-primary-light text-primary border-primary/30'
+              : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+          }`}
+        >
+          Annual Summary
+        </button>
       </div>
 
-      {view === 'annual' && <AnnualSummary data={data} year={year} onConsuntivoClick={handleClick} onAddEntry={onAddEntry} />}
       {view === 'monthly' && <MonthlyDetail data={data} year={year} onConsuntivoClick={handleClick} onAddEntry={onAddEntry} />}
+      {view === 'annual' && <AnnualSummary data={data} year={year} onConsuntivoClick={handleClick} onAddEntry={onAddEntry} />}
     </div>
   );
 }

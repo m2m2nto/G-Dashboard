@@ -29,6 +29,12 @@ function monthFromDate(dateStr) {
   return MONTHS[m] || null;
 }
 
+// Returns the effective budget month (competencyMonth overrides date month)
+function effectiveMonthLabel(entry) {
+  if (entry.competencyMonth != null) return MONTHS[entry.competencyMonth] || null;
+  return monthFromDate(entry.date);
+}
+
 function fmtDate(dateStr) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-');
@@ -52,7 +58,7 @@ const PAYMENT_OPTIONS = [
   { value: '60days', label: '60 days' },
 ];
 
-const emptyForm = { date: '', description: '', category: '', budgetRow: null, amount: '', payment: 'inMonth', notes: '', scenario: 'consuntivo' };
+const emptyForm = { date: '', description: '', category: '', budgetRow: null, amount: '', payment: 'inMonth', notes: '', scenario: 'consuntivo', competencyMonth: '' };
 
 export default function BudgetEntries({ entries, year, budgetCategories, onAdd, onUpdate, onDelete, onSeed, onRefresh, loading, seededScenarios }) {
   const todayLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
@@ -67,6 +73,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
   const [monthFilter, setMonthFilter] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState(null);
   const [scenarioFilter, setScenarioFilter] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [seedTarget, setSeedTarget] = useState(null);
   const [seeding, setSeeding] = useState(false);
@@ -89,7 +96,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
     if (!form.date || !form.description.trim() || !form.category || !form.budgetRow || !form.amount) return;
     setSubmitting(true);
     try {
-      await onAdd({
+      const payload = {
         date: form.date,
         description: form.description.trim(),
         category: form.category,
@@ -98,8 +105,10 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
         payment: form.payment,
         notes: form.notes,
         scenario: form.scenario,
-      });
-      setForm({ ...emptyForm, date: todayLocal, scenario: form.scenario });
+      };
+      if (form.competencyMonth !== '') payload.competencyMonth = Number(form.competencyMonth);
+      await onAdd(payload);
+      setForm({ ...emptyForm, date: todayLocal, scenario: form.scenario, competencyMonth: '' });
       descRef.current?.focus();
     } finally {
       setSubmitting(false);
@@ -117,6 +126,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
       payment: entry.payment || 'inMonth',
       notes: entry.notes || '',
       scenario: entry.scenario || 'consuntivo',
+      competencyMonth: entry.competencyMonth != null ? String(entry.competencyMonth) : '',
     });
   };
 
@@ -124,7 +134,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
     if (!editForm.date || !editForm.description.trim() || !editForm.category || !editForm.budgetRow || !editForm.amount) return;
     setSubmitting(true);
     try {
-      await onUpdate(editId, {
+      const patch = {
         date: editForm.date,
         description: editForm.description.trim(),
         category: editForm.category,
@@ -133,7 +143,10 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
         payment: editForm.payment,
         notes: editForm.notes,
         scenario: editForm.scenario,
-      });
+      };
+      if (editForm.competencyMonth !== '') patch.competencyMonth = Number(editForm.competencyMonth);
+      else patch.competencyMonth = null; // clear it
+      await onUpdate(editId, patch);
       setEditId(null);
       setEditForm(null);
     } finally {
@@ -190,7 +203,20 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
 
   const filtered = useMemo(() => {
     let rows = entries;
-    if (monthFilter) rows = rows.filter((e) => monthFromDate(e.date) === monthFilter);
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      rows = rows.filter((e) =>
+        (e.scenario || 'consuntivo').toLowerCase().includes(q) ||
+        (e.date || '').includes(q) ||
+        (effectiveMonthLabel(e) || '').toLowerCase().includes(q) ||
+        (e.description || '').toLowerCase().includes(q) ||
+        (e.category || '').toLowerCase().includes(q) ||
+        String(e.amount).includes(q) ||
+        (e.payment || '').toLowerCase().includes(q) ||
+        (e.notes || '').toLowerCase().includes(q)
+      );
+    }
+    if (monthFilter) rows = rows.filter((e) => effectiveMonthLabel(e) === monthFilter);
     if (categoryFilter) rows = rows.filter((e) => e.category === categoryFilter);
     if (scenarioFilter) rows = rows.filter((e) => (e.scenario || 'consuntivo') === scenarioFilter);
     if (sortCol) {
@@ -201,7 +227,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
         } else if (sortCol === 'updatedAt') {
           va = a.updatedAt || ''; vb = b.updatedAt || '';
         } else if (sortCol === 'month') {
-          va = monthFromDate(a.date) || ''; vb = monthFromDate(b.date) || '';
+          va = effectiveMonthLabel(a) || ''; vb = effectiveMonthLabel(b) || '';
         } else {
           va = (a[sortCol] || '').toLowerCase(); vb = (b[sortCol] || '').toLowerCase();
         }
@@ -211,7 +237,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
       });
     }
     return rows;
-  }, [entries, monthFilter, categoryFilter, scenarioFilter, sortCol, sortDir]);
+  }, [entries, searchQuery, monthFilter, categoryFilter, scenarioFilter, sortCol, sortDir]);
 
   const CategorySelect = ({ value, onChange, id }) => (
     <select
@@ -241,7 +267,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
     </select>
   );
 
-  const hasActiveFilters = monthFilter || categoryFilter || scenarioFilter;
+  const hasActiveFilters = monthFilter || categoryFilter || scenarioFilter || searchQuery;
 
   const seeded = seededScenarios || {};
 
@@ -298,7 +324,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
       {/* New entry form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="px-4 py-3 border-b border-surface-border bg-surface-dim/30">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
             <div>
               <label htmlFor="be-scenario" className="block text-xs font-medium text-on-surface-secondary mb-1">Scenario</label>
               <select
@@ -366,6 +392,20 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                 ))}
               </select>
             </div>
+            <div>
+              <label htmlFor="be-comp-month" className="block text-xs font-medium text-on-surface-secondary mb-1">Competency</label>
+              <select
+                id="be-comp-month"
+                value={form.competencyMonth}
+                onChange={(e) => setForm((f) => ({ ...f, competencyMonth: e.target.value }))}
+                className={`${CONTROL_PADDED} w-full`}
+              >
+                <option value="">Same as date</option>
+                {MONTHS.map((m, i) => (
+                  <option key={m} value={i}>{m}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="mt-3 flex items-end gap-3">
             <div className="flex-1">
@@ -388,6 +428,16 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
 
       {/* Filters row */}
       <div className="px-4 py-2 flex items-center gap-3 flex-wrap border-b border-surface-border">
+        <div className="flex items-center gap-1.5 relative">
+          <span className="material-symbols-outlined absolute left-2 text-on-surface-tertiary pointer-events-none" style={{ fontSize: '16px' }}>search</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search..."
+            className={`${CONTROL_PADDED} text-xs w-44 pl-7`}
+          />
+        </div>
         <div className="flex items-center gap-1.5">
           <label htmlFor="be-filter-scenario" className="text-xs font-medium text-on-surface-tertiary">Scenario:</label>
           <select
@@ -446,7 +496,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
         </div>
         {hasActiveFilters && (
           <button
-            onClick={() => { setMonthFilter(null); setCategoryFilter(null); setScenarioFilter(null); }}
+            onClick={() => { setSearchQuery(''); setMonthFilter(null); setCategoryFilter(null); setScenarioFilter(null); }}
             className={BUTTON_GHOST}
           >
             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
@@ -463,7 +513,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
               {[
                 { key: 'scenario', label: 'Scenario', align: 'left', w: 'w-24' },
                 { key: 'date', label: 'Date', align: 'left', w: 'w-28' },
-                { key: 'month', label: 'Month', align: 'center', w: 'w-14' },
+                { key: 'month', label: 'Budget Month', align: 'center', w: 'w-20' },
                 { key: 'description', label: 'Description', align: 'left', w: '' },
                 { key: 'category', label: 'Category', align: 'left', w: 'w-56' },
                 { key: 'amount', label: 'Amount', align: 'right', w: 'w-28' },
@@ -529,8 +579,17 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                       className={`${CONTROL_PADDED} w-full text-xs`}
                     />
                   </td>
-                  <td className="px-3 py-1.5 text-center text-xs font-medium text-on-surface-secondary">
-                    {monthFromDate(editForm.date)}
+                  <td className="px-3 py-1.5">
+                    <select
+                      value={editForm.competencyMonth}
+                      onChange={(e) => setEditForm((f) => ({ ...f, competencyMonth: e.target.value }))}
+                      className={`${CONTROL_PADDED} w-full text-xs`}
+                    >
+                      <option value="">{monthFromDate(editForm.date) || '—'}</option>
+                      {MONTHS.map((m, i) => (
+                        <option key={m} value={i}>{m}</option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-3 py-1.5">
                     <input
@@ -597,7 +656,15 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs tabular-nums">{fmtDate(entry.date)}</td>
-                  <td className="px-3 py-2 text-center text-xs font-medium text-on-surface-secondary">{monthFromDate(entry.date)}</td>
+                  <td className="px-3 py-2 text-center text-xs font-medium text-on-surface-secondary">
+                    {effectiveMonthLabel(entry)}
+                    {entry.competencyMonth != null && monthFromDate(entry.date) !== MONTHS[entry.competencyMonth] && (
+                      <span className="block text-[9px] text-on-surface-tertiary" title={`Payment: ${monthFromDate(entry.date)}`}>
+                        <span className="material-symbols-outlined align-middle" style={{ fontSize: '10px' }}>swap_horiz</span>
+                        {monthFromDate(entry.date)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-sm text-on-surface">{entry.description}</td>
                   <td className="px-3 py-2 text-xs text-on-surface-secondary">{entry.category}</td>
                   <td className={`px-3 py-2 text-right text-sm tabular-nums font-medium ${entry.amount < 0 ? 'text-cf-neg' : ''}`}>
