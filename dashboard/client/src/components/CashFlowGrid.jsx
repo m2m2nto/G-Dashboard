@@ -47,7 +47,7 @@ function yoyDiffColor(value) {
     : 'text-cf-neg bg-cf-neg-bg';
 }
 
-// Conditional value color for MARGINE / SALDO / RIS rows (matches Excel conditional formatting)
+// Conditional value color for MARGIN / SALDO / RIS rows (matches Excel conditional formatting)
 function conditionalColor(value) {
   if (value == null || value === 0) return '';
   const num = Number(value);
@@ -75,7 +75,7 @@ function CashFlowSkeleton() {
             {MONTHS.map((m) => (
               <th key={m} className="px-2 py-2 text-right text-xs font-medium w-20 sticky top-0 z-10 bg-surface-dim">{m}</th>
             ))}
-            <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-24 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
+            <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-24 sticky top-0 z-10 bg-surface-dim">TOTAL</th>
           </tr>
         </thead>
         <tbody>
@@ -222,7 +222,7 @@ export default function CashFlowGrid({ data, showYoY = true, year }) {
     </tr>
   );
 
-  // MARGINE / SALDO / RIS rows have conditional red/green on month values
+  // MARGIN / SALDO / RIS rows have conditional red/green on month values
   const renderConditionalRow = (label, rowData, bgClass, isCost = false) => (
     <tr className={`${bgClass} font-semibold`}>
       <td className={`px-3 py-2 text-sm border-r border-surface-border text-on-surface sticky left-0 z-10 ${bgClass}`}>{label}</td>
@@ -258,7 +258,7 @@ export default function CashFlowGrid({ data, showYoY = true, year }) {
               {MONTHS.map((m) => (
                 <th key={m} className="px-2 py-2 text-right text-xs font-medium w-20 sticky top-0 z-10 bg-surface-dim">{m}</th>
               ))}
-              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-24 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
+              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-24 sticky top-0 z-10 bg-surface-dim">TOTAL</th>
               {yoyVisible && (
                 <>
                   <th className={`px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-16 sticky top-0 z-10 ${yoyBg}`}>YoY %</th>
@@ -269,22 +269,22 @@ export default function CashFlowGrid({ data, showYoY = true, year }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-surface-border">
-            {renderSection('COSTI', data.costs, 'cost')}
-            {renderTotalRow('TOTALE COSTI', data.totals.totalCosts, 'bg-surface-dim', true)}
+            {renderSection('COSTS', data.costs, 'cost')}
+            {renderTotalRow('TOTAL COSTS', data.totals.totalCosts, 'bg-surface-dim', true)}
 
             <tr><td colSpan={colSpan} className="py-1"></td></tr>
 
-            {renderSection('RICAVI', data.revenues, 'revenue')}
-            {renderTotalRow('TOTALE RICAVI', data.totals.totalRevenues, 'bg-surface-dim')}
+            {renderSection('REVENUES', data.revenues, 'revenue')}
+            {renderTotalRow('TOTAL REVENUES', data.totals.totalRevenues, 'bg-surface-dim')}
 
             <tr><td colSpan={colSpan} className="py-1"></td></tr>
 
-            {renderSection('FINANZIAMENTI', data.financing, 'financing')}
-            {renderTotalRow('TOTALE FINANZIAMENTI', data.totals.totalFinancing, 'bg-surface-dim', true)}
+            {renderSection('FINANCING', data.financing, 'financing')}
+            {renderTotalRow('TOTAL FINANCING', data.totals.totalFinancing, 'bg-surface-dim', true)}
 
             <tr><td colSpan={colSpan} className="py-1"></td></tr>
 
-            {renderConditionalRow('MARGINE', data.totals.margin, 'bg-surface-dim')}
+            {renderConditionalRow('MARGIN', data.totals.margin, 'bg-surface-dim')}
             {data.totals.saldoCC && renderConditionalRow('SALDO C.C.', data.totals.saldoCC, 'bg-surface-dim')}
             {re && (
               <tr className="bg-surface-dim font-semibold">

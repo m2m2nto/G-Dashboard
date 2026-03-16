@@ -106,22 +106,34 @@ export default function DashboardHome({ year, monthlyData, onNavigate, onOpenNew
 
       const operatingMargin = totalRevenue - totalCosts;
 
-      // Budget variance — compare actual costs vs possibile budget (YTD)
+      // Budget variance — consuntivo margin vs possibile margin (all from budget data, YTD)
       let budgetVariance = null;
       let budgetVariancePct = null;
-      if (budgetData?.costs) {
+      if (budgetData?.costs && budgetData?.revenues) {
         const currentMonthIdx = new Date().getMonth();
-        let budgetTotal = 0;
+        let budgetCosts = 0, budgetRevenues = 0;
+        let actualCosts = 0, actualRevenues = 0;
         budgetData.costs.forEach((row) => {
           const vals = row.months || {};
           for (let m = 0; m <= currentMonthIdx && m < 12; m++) {
             const cell = vals[MONTHS[m]];
-            budgetTotal += Math.abs(cell?.possibile || 0);
+            budgetCosts += Math.abs(cell?.possibile || 0);
+            actualCosts += Math.abs(cell?.consuntivo || 0);
           }
         });
-        if (budgetTotal > 0) {
-          budgetVariance = totalCosts - budgetTotal;
-          budgetVariancePct = (budgetVariance / budgetTotal) * 100;
+        budgetData.revenues.forEach((row) => {
+          const vals = row.months || {};
+          for (let m = 0; m <= currentMonthIdx && m < 12; m++) {
+            const cell = vals[MONTHS[m]];
+            budgetRevenues += Math.abs(cell?.possibile || 0);
+            actualRevenues += Math.abs(cell?.consuntivo || 0);
+          }
+        });
+        const budgetMargin = budgetRevenues - budgetCosts;
+        const actualMargin = actualRevenues - actualCosts;
+        if (budgetMargin !== 0) {
+          budgetVariance = actualMargin - budgetMargin;
+          budgetVariancePct = (budgetVariance / Math.abs(budgetMargin)) * 100;
         }
       }
 
@@ -206,7 +218,7 @@ export default function DashboardHome({ year, monthlyData, onNavigate, onOpenNew
           icon="savings"
           trend={metrics?.budgetVariancePct}
           subtitle={metrics?.budgetVariance != null
-            ? (metrics.budgetVariance <= 0 ? 'under budget' : 'over budget')
+            ? (metrics.budgetVariance >= 0 ? 'above budget' : 'below budget')
             : 'no budget data'}
           onClick={() => onNavigate('budget')}
         />
@@ -227,7 +239,7 @@ export default function DashboardHome({ year, monthlyData, onNavigate, onOpenNew
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 13 }} />
               <Line dataKey="revenue" name="Revenue" stroke={CHART_COLORS.revenue} strokeWidth={2.5} dot={{ r: 4, fill: CHART_COLORS.revenue }} type="monotone" />
               <Line dataKey="costs" name="Costs" stroke={CHART_COLORS.costs} strokeWidth={2.5} dot={{ r: 4, fill: CHART_COLORS.costs }} type="monotone" />
-              <Line dataKey="financing" name="Finanziamento Soci" stroke={CHART_COLORS.financing} strokeWidth={2.5} dot={{ r: 4, fill: CHART_COLORS.financing }} type="monotone" />
+              <Line dataKey="financing" name="Shareholder Financing" stroke={CHART_COLORS.financing} strokeWidth={2.5} dot={{ r: 4, fill: CHART_COLORS.financing }} type="monotone" />
               <Line dataKey="margin" name="Margin" stroke={CHART_COLORS.margin} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: CHART_COLORS.margin }} type="monotone" />
             </LineChart>
           </ResponsiveContainer>

@@ -84,7 +84,7 @@ export default function CashFlowByBudget({ txBudgetSummary, budget, luxCashFlow,
     const totalRevenues = sumRows(revenues);
     const totalFinancing = sumRows(financing);
 
-    // MARGINE = revenues - costs + financing (per month)
+    // MARGIN = revenues - costs + financing (per month)
     const margin = {};
     let marginTotal = 0;
     MONTHS.forEach((m) => {
@@ -258,33 +258,33 @@ export default function CashFlowByBudget({ txBudgetSummary, budget, luxCashFlow,
         <table className="min-w-full text-sm border-collapse">
           <thead>
             <tr className="bg-surface-dim text-on-surface-secondary">
-              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Categoria</th>
+              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Category</th>
               {MONTHS.map((m) => (
                 <th key={m} className="px-2 py-2 text-right text-xs font-medium w-20 sticky top-0 z-10 bg-surface-dim">{m}</th>
               ))}
-              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-24 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
+              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-24 sticky top-0 z-10 bg-surface-dim">TOTAL</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-surface-border">
-            {renderSection('COSTI', data.costs)}
-            {renderTotalRow('TOTALE COSTI', data.totals.totalCosts)}
+            {renderSection('COSTS', data.costs)}
+            {renderTotalRow('TOTAL COSTS', data.totals.totalCosts)}
 
             <tr><td colSpan={colSpan} className="py-1"></td></tr>
 
-            {renderSection('RICAVI', data.revenues)}
-            {renderTotalRow('TOTALE RICAVI', data.totals.totalRevenues)}
+            {renderSection('REVENUES', data.revenues)}
+            {renderTotalRow('TOTAL REVENUES', data.totals.totalRevenues)}
 
             {data.financing.length > 0 && (
               <>
                 <tr><td colSpan={colSpan} className="py-1"></td></tr>
-                {renderSection('FINANZIAMENTI', data.financing)}
-                {renderTotalRow('TOTALE FINANZIAMENTI', data.totals.totalFinancing)}
+                {renderSection('FINANCING', data.financing)}
+                {renderTotalRow('TOTAL FINANCING', data.totals.totalFinancing)}
               </>
             )}
 
             <tr><td colSpan={colSpan} className="py-1"></td></tr>
 
-            {renderConditionalRow('MARGINE', data.totals.margin)}
+            {renderConditionalRow('MARGIN', data.totals.margin)}
             {renderConditionalRow('SALDO', data.totals.saldo, false)}
           </tbody>
         </table>

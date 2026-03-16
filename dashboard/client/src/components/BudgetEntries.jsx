@@ -5,10 +5,10 @@ import { CONTROL_PADDED, BUTTON_PRIMARY, BUTTON_GHOST, BUTTON_PILL_BASE, BUTTON_
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
 
 const SCENARIO_OPTIONS = [
-  { value: 'consuntivo', label: 'Consuntivo' },
-  { value: 'certo', label: 'Certo' },
-  { value: 'possibile', label: 'Possibile' },
-  { value: 'ottimistico', label: 'Ottimistico' },
+  { value: 'consuntivo', label: 'Actual' },
+  { value: 'certo', label: 'Certain' },
+  { value: 'possibile', label: 'Possible' },
+  { value: 'ottimistico', label: 'Optimistic' },
 ];
 
 const SCENARIO_COLORS = {
@@ -646,7 +646,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
                 <tr key={entry.id} className="hover:bg-surface-dim/50 transition-colors">
                   <td className="px-3 py-2">
                     <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${SCENARIO_COLORS[entry.scenario || 'consuntivo']}`}>
-                      {(entry.scenario || 'consuntivo').charAt(0).toUpperCase() + (entry.scenario || 'consuntivo').slice(1)}
+                      {SCENARIO_OPTIONS.find((o) => o.value === (entry.scenario || 'consuntivo'))?.label || entry.scenario}
                     </span>
                     {entry.description === 'Excel adjustment' && (
                       <span className="inline-flex items-center gap-0.5 ml-1 text-[9px] font-medium text-orange-700 bg-orange-50 px-1 py-0.5 rounded border border-orange-200">
@@ -703,8 +703,8 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
 
       <ConfirmDialog
         open={!!seedTarget}
-        title={`Import ${seedTarget} values`}
-        message={`This will read the current "${seedTarget}" values from the Excel budget file and create initial entries for each non-zero cell. After seeding, the entry system becomes the source of truth for this scenario. This cannot be undone.`}
+        title={`Import ${SCENARIO_OPTIONS.find((o) => o.value === seedTarget)?.label || seedTarget} values`}
+        message={`This will read the current "${SCENARIO_OPTIONS.find((o) => o.value === seedTarget)?.label || seedTarget}" values from the Excel budget file and create initial entries for each non-zero cell. After seeding, the entry system becomes the source of truth for this scenario. This cannot be undone.`}
         confirmLabel={seeding ? 'Importing...' : 'Import'}
         onConfirm={handleSeed}
         onCancel={() => setSeedTarget(null)}
@@ -713,7 +713,7 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
       <ConfirmDialog
         open={refreshAllTarget}
         title="Refresh from Excel"
-        message={`This will compare entry totals against the Excel budget file for consuntivo${['certo', 'possibile', 'ottimistico'].some((s) => (seededScenarios || {})[s]) ? ` and seeded scenarios (${['certo', 'possibile', 'ottimistico'].filter((s) => (seededScenarios || {})[s]).join(', ')})` : ''}. Where values differ, adjustment entries will be created. Existing entries are preserved.`}
+        message={`This will compare entry totals against the Excel budget file for Actual${['certo', 'possibile', 'ottimistico'].some((s) => (seededScenarios || {})[s]) ? ` and seeded scenarios (${['certo', 'possibile', 'ottimistico'].filter((s) => (seededScenarios || {})[s]).map((s) => SCENARIO_OPTIONS.find((o) => o.value === s)?.label || s).join(', ')})` : ''}. Where values differ, adjustment entries will be created. Existing entries are preserved.`}
         confirmLabel="Refresh"
         onConfirm={handleRefreshAll}
         onCancel={() => setRefreshAllTarget(false)}

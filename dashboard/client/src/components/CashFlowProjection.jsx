@@ -7,9 +7,9 @@ const COST_ROW_MIN = 3;
 const COST_ROW_MAX = 14;
 
 const SCENARIOS = ['certo', 'possibile', 'ottimistico'];
-const SCENARIO_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico' };
+const SCENARIO_LABELS = { certo: 'Certain', possibile: 'Possible', ottimistico: 'Optimistic' };
 const FIELDS = ['certo', 'possibile', 'ottimistico', 'consuntivo', 'diff'];
-const FIELD_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico', consuntivo: 'Consuntivo', diff: 'Δ' };
+const FIELD_LABELS = { certo: 'Certain', possibile: 'Possible', ottimistico: 'Optimistic', consuntivo: 'Actual', diff: 'Δ' };
 const ENTRY_BG = 'bg-accent-light';
 
 function fmt(v) {
@@ -424,7 +424,7 @@ function AnnualSummary({ projection, onCellClick }) {
       <table className="min-w-full text-sm border-collapse">
         <thead>
           <tr className="bg-surface-dim text-on-surface-secondary">
-            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Categoria</th>
+            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Category</th>
             {FIELDS.map((f) => (
               <th key={f} className={`px-3 py-2 text-right text-xs font-medium w-28 sticky top-0 z-10 bg-surface-dim ${f === 'diff' ? 'border-l border-surface-border' : ''}`}>
                 {FIELD_LABELS[f]}
@@ -435,27 +435,27 @@ function AnnualSummary({ projection, onCellClick }) {
 
         <tbody>
           <tr className="bg-surface-dim">
-            <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>USCITE</td>
+            <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>OUTFLOWS</td>
           </tr>
         </tbody>
         {renderCategoryRows(projection.costs, true, 'cost')}
-        {renderTotalRow('TOTALE USCITE', projection.totals.totalCosts, true)}
+        {renderTotalRow('TOTAL OUTFLOWS', projection.totals.totalCosts, true)}
 
         <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
         <tbody>
           <tr className="bg-surface-dim">
-            <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>ENTRATE</td>
+            <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>INFLOWS</td>
           </tr>
         </tbody>
         {renderCategoryRows(projection.revenues, false, 'rev')}
-        {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues, false)}
+        {renderTotalRow('TOTAL INFLOWS', projection.totals.totalRevenues, false)}
 
         {projection.financing?.length > 0 && (<>
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANCING</td>
             </tr>
           </tbody>
           {renderCategoryRows(projection.financing, false, 'fin')}
@@ -636,7 +636,7 @@ function BudgetAnnualSummary({ projection, onCellClick }) {
         <table className="min-w-full text-sm border-collapse">
           <thead>
             <tr className="bg-surface-dim text-on-surface-secondary">
-              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Categoria</th>
+              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Category</th>
               {FIELDS.map((f) => (
                 <th key={f} className={`px-3 py-2 text-right text-xs font-medium w-28 sticky top-0 z-10 bg-surface-dim ${f === 'diff' ? 'border-l border-surface-border' : ''}`}>
                   {FIELD_LABELS[f]}
@@ -647,27 +647,27 @@ function BudgetAnnualSummary({ projection, onCellClick }) {
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>USCITE</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>OUTFLOWS</td>
             </tr>
           </tbody>
           {renderCategoryRows(projection.costs, true, 'cost')}
-          {renderTotalRow('TOTALE USCITE', projection.totals.totalCosts, true)}
+          {renderTotalRow('TOTAL OUTFLOWS', projection.totals.totalCosts, true)}
 
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>ENTRATE</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>INFLOWS</td>
             </tr>
           </tbody>
           {renderCategoryRows(projection.revenues, false, 'rev')}
-          {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues, false)}
+          {renderTotalRow('TOTAL INFLOWS', projection.totals.totalRevenues, false)}
 
           {projection.financing?.length > 0 && (<>
             <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
             <tbody>
               <tr className="bg-surface-dim">
-                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANCING</td>
               </tr>
             </tbody>
             {renderCategoryRows(projection.financing, false, 'fin')}
@@ -752,37 +752,37 @@ function MonthlyDetail({ projection }) {
         <table className="min-w-full text-sm border-collapse">
           <thead>
             <tr className="bg-surface-dim text-on-surface-secondary">
-              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Categoria</th>
+              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Category</th>
               {MONTHS.map((m) => (
                 <th key={m} className="px-2 py-2 text-right text-xs font-medium w-24 sticky top-0 z-10 bg-surface-dim">{m}</th>
               ))}
-              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
+              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTAL</th>
             </tr>
           </thead>
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>USCITE</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>OUTFLOWS</td>
             </tr>
             {renderCategoryRows(projection.costs)}
-            {renderTotalRow('TOTALE USCITE', projection.totals.totalCosts)}
+            {renderTotalRow('TOTAL OUTFLOWS', projection.totals.totalCosts)}
           </tbody>
 
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>ENTRATE</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>INFLOWS</td>
             </tr>
             {renderCategoryRows(projection.revenues)}
-            {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues)}
+            {renderTotalRow('TOTAL INFLOWS', projection.totals.totalRevenues)}
           </tbody>
 
           {projection.financing?.length > 0 && (<>
             <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
             <tbody>
               <tr className="bg-surface-dim">
-                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANCING</td>
               </tr>
               {renderCategoryRows(projection.financing)}
             </tbody>
@@ -887,37 +887,37 @@ function BudgetMonthlyDetail({ projection, onCellClick }) {
         <table className="min-w-full text-sm border-collapse">
           <thead>
             <tr className="bg-surface-dim text-on-surface-secondary">
-              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Categoria</th>
+              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Category</th>
               {MONTHS.map((m) => (
                 <th key={m} className="px-2 py-2 text-right text-xs font-medium w-24 sticky top-0 z-10 bg-surface-dim">{m}</th>
               ))}
-              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
+              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTAL</th>
             </tr>
           </thead>
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>USCITE</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>OUTFLOWS</td>
             </tr>
             {renderCategoryRows(projection.costs)}
-            {renderTotalRow('TOTALE USCITE', projection.totals.totalCosts)}
+            {renderTotalRow('TOTAL OUTFLOWS', projection.totals.totalCosts)}
           </tbody>
 
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>ENTRATE</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>INFLOWS</td>
             </tr>
             {renderCategoryRows(projection.revenues)}
-            {renderTotalRow('TOTALE ENTRATE', projection.totals.totalRevenues)}
+            {renderTotalRow('TOTAL INFLOWS', projection.totals.totalRevenues)}
           </tbody>
 
           {projection.financing?.length > 0 && (<>
             <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
             <tbody>
               <tr className="bg-surface-dim">
-                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANZIAMENTI</td>
+                <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>FINANCING</td>
               </tr>
               {renderCategoryRows(projection.financing)}
             </tbody>

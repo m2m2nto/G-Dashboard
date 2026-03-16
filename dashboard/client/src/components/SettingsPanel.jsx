@@ -320,7 +320,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
             <FileSection
               icon="account_balance"
               label="Budget File"
-              description="The Excel file with the Consuntivo BUDGET sheet."
+              description="The Excel file with the budget sheet."
               path={budgetFile}
               status={fileStatus.budgetFile}
               problems={fileProblems.budgetFile}

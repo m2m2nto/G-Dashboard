@@ -17,9 +17,9 @@ const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', '
 
 const BAR_METRICS = ['costs', 'revenues'];
 const TREND_METRICS = ['costs', 'revenues'];
-const METRIC_LABELS = { costs: 'Costi', revenues: 'Ricavi' };
+const METRIC_LABELS = { costs: 'Costs', revenues: 'Revenues' };
 const SCENARIOS = ['certo', 'possibile', 'ottimistico'];
-const SCENARIO_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico' };
+const SCENARIO_LABELS = { certo: 'Certain', possibile: 'Possible', ottimistico: 'Optimistic' };
 
 const BAR_COLORS = {
   certo: '#1e8e3e',
@@ -60,25 +60,6 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-function MetricPicker({ metric, setMetric, metrics }) {
-  return (
-    <div className="flex items-center gap-2">
-      {metrics.map((m) => (
-        <button
-          key={m}
-          onClick={() => setMetric(m)}
-          className={`${BUTTON_PILL_BASE} ${
-            metric === m
-              ? 'bg-primary-light text-primary border-primary/30'
-              : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-          }`}
-        >
-          {METRIC_LABELS[m]}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function ScenarioPicker({ scenario, setScenario }) {
   return (
@@ -118,18 +99,16 @@ export default function BudgetCharts({ data, year }) {
     const key = getTotalsKey(barMetric);
     const totals = data.totals[key];
     if (!totals?.months) return [];
-    const marginTotals = data.totals.margin;
 
     return MONTHS.map((m) => {
       const mv = totals.months[m] || {};
-      const mm = marginTotals?.months?.[m] || {};
       return {
         month: m,
         certo: mv.certo || 0,
         possibile: mv.possibile || 0,
         ottimistico: mv.ottimistico || 0,
         consuntivo: mv.consuntivo || 0,
-        margin: mm.consuntivo || 0,
+        diff: (mv.consuntivo || 0) - (mv.possibile || 0),
       };
     });
   }, [data, barMetric]);
@@ -140,16 +119,14 @@ export default function BudgetCharts({ data, year }) {
     const key = getTotalsKey(trendMetric);
     const totals = data.totals[key];
     if (!totals?.months) return [];
-    const marginTotals = data.totals.margin;
 
     return MONTHS.map((m) => {
       const mv = totals.months[m] || {};
-      const mm = marginTotals?.months?.[m] || {};
       return {
         month: m,
         budget: mv[trendScenario] || 0,
         consuntivo: mv.consuntivo || 0,
-        margin: mm.consuntivo || 0,
+        diff: (mv.consuntivo || 0) - (mv[trendScenario] || 0),
       };
     });
   }, [data, trendMetric, trendScenario]);
@@ -159,13 +136,26 @@ export default function BudgetCharts({ data, year }) {
   return (
     <div className="space-y-6 p-4">
       {/* Chart 1: Grouped Bar — All Scenarios vs Actual */}
-      <div className="bg-white rounded-2xl shadow-elevation-1 p-6">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h2 className="text-base font-semibold text-on-surface">
-            Budget vs Consuntivo per Mese{year ? ` ${year}` : ''}
-          </h2>
-          <MetricPicker metric={barMetric} setMetric={setBarMetric} metrics={BAR_METRICS} />
+      <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+        <div className="px-6 py-3 flex items-center gap-2 border-b border-surface-border">
+          {BAR_METRICS.map((m) => (
+            <button
+              key={m}
+              onClick={() => setBarMetric(m)}
+              className={`${BUTTON_PILL_BASE} ${
+                barMetric === m
+                  ? 'bg-primary-light text-primary border-primary/30'
+                  : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+              }`}
+            >
+              {METRIC_LABELS[m]}
+            </button>
+          ))}
         </div>
+        <div className="p-6">
+          <h2 className="text-base font-semibold text-on-surface mb-4">
+            Budget vs Actual per Month{year ? ` ${year}` : ''}
+          </h2>
         <ResponsiveContainer width="100%" height={360}>
           <ComposedChart data={barData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#dadce0" />
@@ -173,13 +163,13 @@ export default function BudgetCharts({ data, year }) {
             <YAxis tick={{ fontSize: 12, fill: '#5f6368' }} tickFormatter={fmtK} width={60} />
             <Tooltip content={<ChartTooltip />} />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 13 }} />
-            <Bar dataKey="certo" name="Certo" fill={BAR_COLORS.certo} radius={[3, 3, 0, 0]} barSize={16} />
-            <Bar dataKey="possibile" name="Possibile" fill={BAR_COLORS.possibile} radius={[3, 3, 0, 0]} barSize={16} />
-            <Bar dataKey="ottimistico" name="Ottimistico" fill={BAR_COLORS.ottimistico} radius={[3, 3, 0, 0]} barSize={16} />
-            <Bar dataKey="consuntivo" name="Consuntivo" fill={BAR_COLORS.consuntivo} radius={[3, 3, 0, 0]} barSize={16} />
+            <Bar dataKey="certo" name="Certain" fill={BAR_COLORS.certo} radius={[3, 3, 0, 0]} barSize={16} />
+            <Bar dataKey="possibile" name="Possible" fill={BAR_COLORS.possibile} radius={[3, 3, 0, 0]} barSize={16} />
+            <Bar dataKey="ottimistico" name="Optimistic" fill={BAR_COLORS.ottimistico} radius={[3, 3, 0, 0]} barSize={16} />
+            <Bar dataKey="consuntivo" name="Actual" fill={BAR_COLORS.consuntivo} radius={[3, 3, 0, 0]} barSize={16} />
             <Line
-              dataKey="margin"
-              name="Δ"
+              dataKey="diff"
+              name="Δ (A − B)"
               stroke={BAR_COLORS.margin}
               strokeWidth={2.5}
               dot={{ r: 4, fill: BAR_COLORS.margin }}
@@ -187,19 +177,32 @@ export default function BudgetCharts({ data, year }) {
             />
           </ComposedChart>
         </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Chart 2: Area/Line — Budget vs Actual Trend */}
-      <div className="bg-white rounded-2xl shadow-elevation-1 p-6">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h2 className="text-base font-semibold text-on-surface">
-            Trend: Budget vs Consuntivo{year ? ` ${year}` : ''}
-          </h2>
-          <div className="flex items-center gap-4 flex-wrap">
-            <ScenarioPicker scenario={trendScenario} setScenario={setTrendScenario} />
-            <MetricPicker metric={trendMetric} setMetric={setTrendMetric} metrics={TREND_METRICS} />
-          </div>
+      <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
+        <div className="px-6 py-3 flex items-center gap-2 border-b border-surface-border flex-wrap">
+          {TREND_METRICS.map((m) => (
+            <button
+              key={m}
+              onClick={() => setTrendMetric(m)}
+              className={`${BUTTON_PILL_BASE} ${
+                trendMetric === m
+                  ? 'bg-primary-light text-primary border-primary/30'
+                  : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
+              }`}
+            >
+              {METRIC_LABELS[m]}
+            </button>
+          ))}
+          <span className="mx-2 h-5 w-px bg-surface-border" />
+          <ScenarioPicker scenario={trendScenario} setScenario={setTrendScenario} />
         </div>
+        <div className="p-6">
+          <h2 className="text-base font-semibold text-on-surface mb-4">
+            Trend: Budget vs Actual{year ? ` ${year}` : ''}
+          </h2>
         <ResponsiveContainer width="100%" height={360}>
           <ComposedChart data={trendData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#dadce0" />
@@ -219,15 +222,15 @@ export default function BudgetCharts({ data, year }) {
             />
             <Line
               dataKey="consuntivo"
-              name="Consuntivo"
+              name="Actual"
               stroke={BAR_COLORS.consuntivo}
               strokeWidth={2.5}
               type="monotone"
               dot={{ r: 4, fill: BAR_COLORS.consuntivo }}
             />
             <Line
-              dataKey="margin"
-              name="Δ"
+              dataKey="diff"
+              name="Δ (A − B)"
               stroke={BAR_COLORS.margin}
               strokeWidth={2}
               strokeDasharray="5 5"
@@ -236,6 +239,7 @@ export default function BudgetCharts({ data, year }) {
             />
           </ComposedChart>
         </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );

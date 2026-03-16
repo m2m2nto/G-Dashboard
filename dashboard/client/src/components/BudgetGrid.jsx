@@ -4,9 +4,9 @@ import { BUTTON_GHOST, BUTTON_PILL_BASE, BUTTON_PRIMARY, CONTROL_COMPACT } from 
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
 const SCENARIOS = ['certo', 'possibile', 'ottimistico'];
-const SCENARIO_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico' };
+const SCENARIO_LABELS = { certo: 'Certain', possibile: 'Possible', ottimistico: 'Optimistic' };
 const FIELDS = ['certo', 'possibile', 'ottimistico', 'consuntivo', 'diff'];
-const FIELD_LABELS = { certo: 'Certo', possibile: 'Possibile', ottimistico: 'Ottimistico', consuntivo: 'Consuntivo', diff: 'Δ' };
+const FIELD_LABELS = { certo: 'Certain', possibile: 'Possible', ottimistico: 'Optimistic', consuntivo: 'Actual', diff: 'Δ' };
 
 function fmt(v) {
   if (v == null || v === 0) return '\u2014';
@@ -40,8 +40,8 @@ function BudgetSkeleton() {
       <table className="min-w-full text-sm">
         <thead>
           <tr className="bg-surface-dim text-on-surface-secondary">
-            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky left-0 z-20 bg-surface-dim w-56">Categoria</th>
-            {['Certo', 'Possibile', 'Ottimistico', 'Consuntivo', 'Δ'].map((h) => (
+            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky left-0 z-20 bg-surface-dim w-56">Category</th>
+            {['Certain', 'Possible', 'Optimistic', 'Actual', 'Δ'].map((h) => (
               <th key={h} className="px-3 py-2 text-right text-xs font-medium w-28 bg-surface-dim">{h}</th>
             ))}
           </tr>
@@ -177,7 +177,7 @@ function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
       <table className="min-w-full text-sm border-collapse">
         <thead>
           <tr className="bg-surface-dim text-on-surface-secondary">
-            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Categoria</th>
+            <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim w-56">Category</th>
             {FIELDS.map((f) => (
               <th key={f} className={`px-3 py-2 text-right text-xs font-medium w-28 sticky top-0 z-10 bg-surface-dim ${f === 'diff' ? 'border-l border-surface-border' : ''}`}>
                 {FIELD_LABELS[f]}
@@ -186,34 +186,34 @@ function AnnualSummary({ data, year, onConsuntivoClick, onAddEntry }) {
           </tr>
         </thead>
 
-        {/* COSTI */}
+        {/* COSTS */}
         <tbody>
           <tr className="bg-surface-dim">
             <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>
-              COSTI
+              COSTS
             </td>
           </tr>
         </tbody>
         {renderCategoryRows(data.costs, true, 'cost')}
-        {renderTotalRow('TOTALE COSTI', data.totals.totalCosts, true)}
+        {renderTotalRow('TOTAL COSTS', data.totals.totalCosts, true)}
 
         <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
-        {/* RICAVI */}
+        {/* REVENUES */}
         <tbody>
           <tr className="bg-surface-dim">
             <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>
-              RICAVI
+              REVENUES
             </td>
           </tr>
         </tbody>
         {renderCategoryRows(data.revenues, false, 'rev')}
-        {renderTotalRow('TOTALE RICAVI', data.totals.totalRevenues, false)}
+        {renderTotalRow('TOTAL REVENUES', data.totals.totalRevenues, false)}
 
         <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
         {/* MARGINE */}
-        {renderMarginRow('MARGINE OPERATIVO', data.totals.margin)}
+        {renderMarginRow('OPERATING MARGIN', data.totals.margin)}
       </table>
     </div>
   );
@@ -260,7 +260,7 @@ function MonthlyDrillDown({ row, isCost, year, onClose, onConsuntivoClick, onAdd
                         <button
                           onClick={() => setAddingMonth(addingMonth === m ? null : m)}
                           className="opacity-0 group-hover:opacity-100 hover:!opacity-100 text-primary hover:text-primary-hover transition-opacity"
-                          title={`Add consuntivo entry for ${m}`}
+                          title={`Add actual entry for ${m}`}
                           style={{ opacity: addingMonth === m ? 1 : undefined }}
                         >
                           <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>{addingMonth === m ? 'close' : 'add_circle'}</span>
@@ -590,36 +590,36 @@ function MonthlyDetail({ data, year, onConsuntivoClick, onAddEntry }) {
         <table className="min-w-full text-sm border-collapse">
           <thead>
             <tr className="bg-surface-dim text-on-surface-secondary">
-              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Categoria</th>
+              <th className="px-3 py-2 text-left text-xs font-medium border-r border-surface-border sticky top-0 left-0 z-20 bg-surface-dim">Category</th>
               <th className="px-1 py-2 text-center text-xs font-medium sticky top-0 z-10 bg-surface-dim w-5"></th>
               {MONTHS.map((m) => (
                 <th key={m} className="px-2 py-2 text-right text-xs font-medium w-24 sticky top-0 z-10 bg-surface-dim">{m}</th>
               ))}
-              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTALE</th>
+              <th className="px-2 py-2 text-right text-xs font-medium border-l border-surface-border w-28 sticky top-0 z-10 bg-surface-dim">TOTAL</th>
             </tr>
           </thead>
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>COSTI</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>COSTS</td>
             </tr>
           </tbody>
           {renderCategoryRows(data.costs, true)}
-          {renderTotalRows('TOTALE COSTI', data.totals.totalCosts, true, BUDGET_TOTAL_COSTS_ROW_FE)}
+          {renderTotalRows('TOTAL COSTS', data.totals.totalCosts, true, BUDGET_TOTAL_COSTS_ROW_FE)}
 
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
           <tbody>
             <tr className="bg-surface-dim">
-              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>RICAVI</td>
+              <td className="px-3 py-1.5 font-bold text-sm text-on-surface border-l-[3px] border-l-primary" colSpan={colSpan}>REVENUES</td>
             </tr>
           </tbody>
           {renderCategoryRows(data.revenues, false)}
-          {renderTotalRows('TOTALE RICAVI', data.totals.totalRevenues, false, BUDGET_TOTAL_REVENUES_ROW_FE)}
+          {renderTotalRows('TOTAL REVENUES', data.totals.totalRevenues, false, BUDGET_TOTAL_REVENUES_ROW_FE)}
 
           <tbody><tr><td colSpan={colSpan} className="py-1"></td></tr></tbody>
 
-          {renderTotalRows('MARGINE OPERATIVO', data.totals.margin, false, BUDGET_MARGIN_ROW_FE)}
+          {renderTotalRows('OPERATING MARGIN', data.totals.margin, false, BUDGET_MARGIN_ROW_FE)}
         </table>
       </div>
     </div>

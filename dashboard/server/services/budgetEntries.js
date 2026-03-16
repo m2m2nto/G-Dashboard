@@ -220,7 +220,7 @@ export function seedEntries(year, scenario) {
         id: generateId(),
         scenario,
         date: `${year}-${MONTHS_PAD[mi]}-01`,
-        description: 'Valore iniziale budget',
+        description: 'Initial budget value',
         category: categoryNames.get(row) || '',
         budgetRow: row,
         amount: Math.round(value * 100) / 100,

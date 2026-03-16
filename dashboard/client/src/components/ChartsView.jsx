@@ -185,7 +185,7 @@ export default function ChartsView({ yearly, yoyQoQ, monthlyData, loading }) {
               />
               <Bar
                 dataKey="financing"
-                name="Finanziamento Soci"
+                name="Shareholder Financing"
                 fill={COLORS.financing}
                 radius={[4, 4, 0, 0]}
                 barSize={28}
@@ -226,7 +226,7 @@ export default function ChartsView({ yearly, yoyQoQ, monthlyData, loading }) {
               />
               <Line dataKey="revenue" name="Revenue" stroke={COLORS.revenue} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.revenue }} type="monotone" />
               <Line dataKey="costs" name="Costs" stroke={COLORS.costs} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.costs }} type="monotone" />
-              <Line dataKey="financing" name="Finanziamento Soci" stroke={COLORS.financing} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.financing }} type="monotone" />
+              <Line dataKey="financing" name="Shareholder Financing" stroke={COLORS.financing} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.financing }} type="monotone" />
               <Line dataKey="margin" name="Margin" stroke={COLORS.margin} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: COLORS.margin }} type="monotone" />
             </LineChart>
           </ResponsiveContainer>
@@ -272,7 +272,7 @@ export default function ChartsView({ yearly, yoyQoQ, monthlyData, loading }) {
               />
               <Line
                 dataKey="financing"
-                name="Finanziamento Soci"
+                name="Shareholder Financing"
                 stroke={COLORS.financing}
                 strokeWidth={2.5}
                 dot={{ r: 4, fill: COLORS.financing }}
