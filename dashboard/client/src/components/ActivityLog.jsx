@@ -1,3 +1,7 @@
+import { useState, useEffect } from 'react';
+
+const PAGE_SIZE = 100;
+
 const ACTION_BADGES = {
   'transaction.add': { label: 'Added', color: 'bg-status-positive/15 text-status-positive' },
   'transaction.update': { label: 'Updated', color: 'bg-primary-light text-primary' },
@@ -19,9 +23,11 @@ const timeFormat = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 });
 
+const amountFormat = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+
 function formatAmount(val) {
   if (val == null) return null;
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val);
+  return amountFormat.format(val);
 }
 
 function describe(entry) {
@@ -71,7 +77,7 @@ function describe(entry) {
     case 'budget.seed':
       return `Seeded ${details?.scenario || 'scenario'}${details?.count != null ? ` (${details.count} entries)` : ''}`;
     case 'budget.refresh':
-      return `Refreshed ${details?.scenario || 'scenario'} — ${details?.created || 0} adjustments, ${details?.skipped || 0} matched`;
+      return `Refreshed ${details?.scenario || 'scenario'} \u2014 ${details?.created || 0} adjustments, ${details?.skipped || 0} matched`;
     default:
       return action;
   }
@@ -87,12 +93,27 @@ function SkeletonRows() {
   ));
 }
 
-export default function ActivityLog({ entries, loading }) {
+export default function ActivityLog({ entries, loading, filtered = false }) {
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Reset visible count when the entries list changes (new filter / new data)
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [entries]);
+
   if (loading) {
     return <div className="divide-y divide-surface-border"><SkeletonRows /></div>;
   }
 
   if (!entries?.length) {
+    if (filtered) {
+      return (
+        <div className="py-16 text-center text-on-surface-tertiary">
+          <span className="material-symbols-outlined block mb-2" style={{ fontSize: '40px' }}>filter_list_off</span>
+          <p className="text-sm">No matching activity — try adjusting your filters</p>
+        </div>
+      );
+    }
     return (
       <div className="py-16 text-center text-on-surface-tertiary">
         <span className="material-symbols-outlined block mb-2" style={{ fontSize: '40px' }}>history</span>
@@ -101,13 +122,16 @@ export default function ActivityLog({ entries, loading }) {
     );
   }
 
+  const visible = entries.slice(0, visibleCount);
+  const remaining = entries.length - visibleCount;
+
   return (
     <div className="divide-y divide-surface-border">
-      {entries.map((entry, i) => {
+      {visible.map((entry, i) => {
         const badge = ACTION_BADGES[entry.action] || { label: entry.action, color: 'bg-surface-dim text-on-surface-secondary' };
         const monthYear = [entry.month, entry.year].filter(Boolean).join(' ');
         return (
-          <div key={i} className="flex items-start gap-3 px-4 py-3 hover:bg-surface-container/50 transition-colors">
+          <div key={`${entry.ts}-${i}`} className="flex items-start gap-3 px-4 py-3 hover:bg-surface-container/50 transition-colors">
             <span className="text-xs text-on-surface-tertiary w-28 shrink-0 pt-0.5 tabular-nums">
               {timeFormat.format(new Date(entry.ts))}
             </span>
@@ -128,6 +152,16 @@ export default function ActivityLog({ entries, loading }) {
           </div>
         );
       })}
+      {remaining > 0 && (
+        <div className="px-4 py-3 text-center">
+          <button
+            onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            className="text-sm font-medium text-primary hover:text-primary-hover transition-colors"
+          >
+            Show more ({Math.min(remaining, PAGE_SIZE)} of {remaining} remaining)
+          </button>
+        </div>
+      )}
     </div>
   );
 }

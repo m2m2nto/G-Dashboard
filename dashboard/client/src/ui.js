@@ -3,6 +3,7 @@ export const CONTROL_BASE =
 
 export const CONTROL_PADDED = `${CONTROL_BASE} px-3`;
 export const CONTROL_COMPACT = `${CONTROL_BASE} px-2`;
+export const CONTROL_SELECT = `${CONTROL_BASE} px-2 pr-8 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20fill%3D%22none%22%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22M2%205l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.5rem_center] bg-[length:1rem]`;
 
 export const BUTTON_BASE =
   'inline-flex items-center justify-center gap-1.5 rounded-full h-9 px-4 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-50';

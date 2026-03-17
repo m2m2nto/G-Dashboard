@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import MonthSelector from './components/MonthSelector.jsx';
 import TransactionTable from './components/TransactionTable.jsx';
 import TransactionForm from './components/TransactionForm.jsx';
@@ -19,7 +19,8 @@ import DashboardHome from './components/DashboardHome.jsx';
 import BudgetEntriesDialog from './components/BudgetEntriesDialog.jsx';
 import TransactionImpactDialog from './components/TransactionImpactDialog.jsx';
 import SubTabBar from './components/SubTabBar.jsx';
-import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE } from './ui.js';
+import SearchInput from './components/SearchInput.jsx';
+import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE, CONTROL_SELECT, CONTROL_PADDED } from './ui.js';
 import {
   getTransactions,
   getTransactionYears,
@@ -139,7 +140,21 @@ export default function App() {
   const [activityLog, setActivityLog] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityQuery, setActivityQuery] = useState('');
-  const [activityFilters, setActivityFilters] = useState([]);
+  const [activityType, setActivityType] = useState('');
+  const [activityDateFrom, setActivityDateFrom] = useState('');
+  const [activityDateTo, setActivityDateTo] = useState('');
+  const [activityUser, setActivityUser] = useState('');
+  const [activityActionType, setActivityActionType] = useState('');
+  const [activityYear, setActivityYear] = useState('');
+  const [activityMonth, setActivityMonth] = useState('');
+  const [activitySort, setActivitySort] = useState('newest');
+  const [activityShowAdvanced, setActivityShowAdvanced] = useState(false);
+  const [activityCashFlowCat, setActivityCashFlowCat] = useState('');
+  const [activityFlowDirection, setActivityFlowDirection] = useState('');
+  const [activityAmountMin, setActivityAmountMin] = useState('');
+  const [activityAmountMax, setActivityAmountMax] = useState('');
+  const [activityScenario, setActivityScenario] = useState('');
+  const deferredActivityQuery = useDeferredValue(activityQuery);
 
   // ── UI ──
   const [toasts, setToasts] = useState([]);
@@ -153,6 +168,24 @@ export default function App() {
     const set = new Set([...txYears, ...cfYears, ...budgetYears]);
     return [...set].sort((a, b) => b - a).map(String);
   }, [txYears, cfYears, budgetYears]);
+
+  // ── Computed: activity dropdown options ──
+  const activityUsers = useMemo(
+    () => [...new Set(activityLog.map((e) => e.user).filter(Boolean))].sort(),
+    [activityLog],
+  );
+  const activityYears = useMemo(
+    () => [...new Set(activityLog.map((e) => e.year).filter(Boolean))].sort().reverse(),
+    [activityLog],
+  );
+  const activityCashFlowCats = useMemo(
+    () => [...new Set(activityLog.map((e) => e.details?.cashFlow).filter(Boolean))].sort(),
+    [activityLog],
+  );
+  const activityScenarios = useMemo(
+    () => [...new Set(activityLog.map((e) => e.details?.scenario).filter(Boolean))].sort(),
+    [activityLog],
+  );
 
   // ── Auto-select year when current globalYear isn't available ──
   useEffect(() => {
@@ -694,20 +727,51 @@ export default function App() {
     : filteredElements;
 
   // ── Activity filter logic ──
-  const activitySearch = activityQuery.trim().toLowerCase();
-  const activityFilterDefs = [
-    { id: 'transactions', label: 'Transactions', predicate: (e) => e.action?.startsWith('transaction.') },
-    { id: 'cashflow', label: 'Cash Flow', predicate: (e) => e.action?.startsWith('cashflow.') },
-    { id: 'budget', label: 'Budget', predicate: (e) => e.action?.startsWith('budget.') },
-    { id: 'elements', label: 'Elements', predicate: (e) => e.action?.startsWith('element.') },
-  ];
+  const finalActivity = useMemo(() => {
+    const search = deferredActivityQuery.trim().toLowerCase();
+    const dateFrom = activityDateFrom ? new Date(activityDateFrom + 'T00:00:00') : null;
+    const dateTo = activityDateTo ? new Date(activityDateTo + 'T23:59:59.999') : null;
 
-  const activeActivityPredicates = activityFilterDefs
-    .filter((f) => activityFilters.includes(f.id))
-    .map((f) => f.predicate);
-
-  const searchedActivity = activitySearch
-    ? activityLog.filter((e) => {
+    let result = activityLog.filter((e) => {
+      // Type (single-select dropdown: transaction, cashflow, budget, element)
+      if (activityType && !e.action?.startsWith(activityType + '.')) return false;
+      // User (exact)
+      if (activityUser && e.user !== activityUser) return false;
+      // Action type
+      if (activityActionType) {
+        if (activityActionType === 'sync') {
+          if (!e.action?.startsWith('cashflow.sync')) return false;
+        } else {
+          if (!e.action?.endsWith(`.${activityActionType}`)) return false;
+        }
+      }
+      // Year
+      if (activityYear && String(e.year) !== String(activityYear)) return false;
+      // Month
+      if (activityMonth && e.month !== activityMonth) return false;
+      // Date range
+      if (dateFrom || dateTo) {
+        const ts = new Date(e.ts);
+        if (dateFrom && ts < dateFrom) return false;
+        if (dateTo && ts > dateTo) return false;
+      }
+      // Cash flow category (exact)
+      if (activityCashFlowCat && e.details?.cashFlow !== activityCashFlowCat) return false;
+      // Flow direction (inflow / outflow)
+      if (activityFlowDirection) {
+        if (activityFlowDirection === 'inflow' && !e.details?.inflow) return false;
+        if (activityFlowDirection === 'outflow' && !e.details?.outflow) return false;
+      }
+      // Amount range (checks inflow, outflow, or amount)
+      if (activityAmountMin || activityAmountMax) {
+        const amt = Number(e.details?.inflow) || Number(e.details?.outflow) || Number(e.details?.amount) || 0;
+        if (activityAmountMin && amt < Number(activityAmountMin)) return false;
+        if (activityAmountMax && amt > Number(activityAmountMax)) return false;
+      }
+      // Budget scenario (exact)
+      if (activityScenario && e.details?.scenario !== activityScenario) return false;
+      // Search query
+      if (search) {
         const haystack = [
           e.action,
           e.details?.transaction,
@@ -715,16 +779,26 @@ export default function App() {
           e.details?.element,
           e.details?.category,
           e.details?.scenario,
+          e.details?.cashFlow,
+          e.details?.notes,
+          e.details?.comments,
+          e.details?.payment,
           e.month,
           e.user,
         ].map((v) => String(v || '').toLowerCase()).join(' ');
-        return haystack.includes(activitySearch);
-      })
-    : activityLog;
+        if (!haystack.includes(search)) return false;
+      }
+      return true;
+    });
 
-  const finalActivity = activeActivityPredicates.length
-    ? searchedActivity.filter((e) => activeActivityPredicates.some((p) => p(e)))
-    : searchedActivity;
+    if (activitySort === 'oldest') {
+      result = [...result].reverse();
+    }
+
+    return result;
+  }, [activityLog, activityType, activityUser, activityActionType, activityYear, activityMonth, activityDateFrom, activityDateTo, deferredActivityQuery, activitySort, activityCashFlowCat, activityFlowDirection, activityAmountMin, activityAmountMax, activityScenario]);
+
+  const hasActiveFilters = !!activityType || !!activityQuery || !!activityDateFrom || !!activityDateTo || !!activityUser || !!activityActionType || !!activityYear || !!activityMonth || activitySort !== 'newest' || !!activityCashFlowCat || !!activityFlowDirection || !!activityAmountMin || !!activityAmountMax || !!activityScenario;
 
   // ── Loading state — waiting for setup check ──
   if (needsSetup === null) {
@@ -805,6 +879,7 @@ export default function App() {
           <DashboardHome
             year={globalYear}
             monthlyData={chartsMonthly}
+            recentActivity={activityLog.slice(0, 5)}
             onNavigate={handleNavigate}
             onOpenNewTransaction={() => { setSection('cashflow'); setCfView('transactions'); setShowForm(true); }}
             onSyncCashFlow={async () => {
@@ -864,16 +939,12 @@ export default function App() {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto sm:justify-end">
-                    <div className="relative w-full sm:w-56 min-w-[140px]">
-                      <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
-                      <input
-                        type="search"
-                        value={txQuery}
-                        onChange={(e) => setTxQuery(e.target.value)}
-                        placeholder="Search transactions..."
-                        className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
+                    <SearchInput
+                      value={txQuery}
+                      onChange={setTxQuery}
+                      placeholder="Search transactions..."
+                      className="w-full sm:w-56 min-w-[140px]"
+                    />
                     <button
                       onClick={async () => {
                         await compactTransactions(globalYear, month).catch(() => {});
@@ -1007,16 +1078,12 @@ export default function App() {
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <div className="relative w-56">
-                      <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
-                      <input
-                        type="search"
-                        value={elementsQuery}
-                        onChange={(e) => setElementsQuery(e.target.value)}
-                        placeholder="Search elements..."
-                        className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
+                    <SearchInput
+                      value={elementsQuery}
+                      onChange={setElementsQuery}
+                      placeholder="Search elements..."
+                      className="w-56"
+                    />
                   </div>
                 </div>
                 <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
@@ -1157,61 +1224,114 @@ export default function App() {
         {section === 'activity' && (
           <div className="bg-white rounded-2xl shadow-elevation-1 overflow-hidden">
             {/* Toolbar */}
-            <div className="px-4 py-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-sm text-on-surface-secondary">
-                  {!activityLoading && (
-                    <>
-                      {activitySearch || activityFilters.length
-                        ? `Showing ${finalActivity.length} of ${activityLog.length}`
-                        : `${activityLog.length} entries`}
-                    </>
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto sm:justify-end">
-                <div className="relative w-full sm:w-56 min-w-[140px]">
-                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-tertiary" style={{ fontSize: '18px' }}>search</span>
-                  <input
-                    type="search"
-                    value={activityQuery}
-                    onChange={(e) => setActivityQuery(e.target.value)}
-                    placeholder="Search activity..."
-                    className="h-9 w-full rounded-full pl-9 pr-3 text-sm bg-surface-container border-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                <button onClick={loadActivity} className={BUTTON_GHOST} title="Refresh">
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
-                  Refresh
-                </button>
-              </div>
+            <div className="px-4 py-2 flex items-center justify-between border-b border-surface-border">
+              <span className="text-sm text-on-surface-secondary">
+                {!activityLoading && (hasActiveFilters
+                  ? `Showing ${finalActivity.length} of ${activityLog.length}`
+                  : `${activityLog.length} entries`)}
+              </span>
+              <button onClick={loadActivity} className={BUTTON_GHOST} title="Refresh">
+                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
+                Refresh
+              </button>
             </div>
-            {/* Filter chips */}
-            <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
-              {activityFilterDefs.map((filter) => {
-                const isActive = activityFilters.includes(filter.id);
+            {/* Primary filters row */}
+            <div className="px-4 py-2 flex items-center gap-3 flex-wrap border-b border-surface-border">
+              <SearchInput
+                value={activityQuery}
+                onChange={setActivityQuery}
+                placeholder="Search..."
+                className="w-44"
+              />
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-on-surface-tertiary">Type:</label>
+                <select
+                  value={activityType}
+                  onChange={(e) => setActivityType(e.target.value)}
+                  className={`${CONTROL_PADDED} text-xs w-32`}
+                >
+                  <option value="">All</option>
+                  <option value="transaction">Transactions</option>
+                  <option value="cashflow">Cash Flow</option>
+                  <option value="budget">Budget</option>
+                  <option value="element">Elements</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-on-surface-tertiary">Action:</label>
+                <select
+                  value={activityActionType}
+                  onChange={(e) => setActivityActionType(e.target.value)}
+                  className={`${CONTROL_PADDED} text-xs w-28`}
+                >
+                  <option value="">All</option>
+                  <option value="add">Added</option>
+                  <option value="update">Updated</option>
+                  <option value="delete">Deleted</option>
+                  <option value="sync">Synced</option>
+                </select>
+              </div>
+              {activityUsers.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">User:</label>
+                  <select
+                    value={activityUser}
+                    onChange={(e) => setActivityUser(e.target.value)}
+                    className={`${CONTROL_PADDED} text-xs w-28`}
+                  >
+                    <option value="">All</option>
+                    {activityUsers.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-medium text-on-surface-tertiary">Sort:</label>
+                <select
+                  value={activitySort}
+                  onChange={(e) => setActivitySort(e.target.value)}
+                  className={`${CONTROL_PADDED} text-xs w-28`}
+                >
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                </select>
+              </div>
+              {/* More filters toggle */}
+              {(() => {
+                const moreCount = [activityDateFrom, activityDateTo, activityYear, activityMonth, activityCashFlowCat, activityFlowDirection, activityAmountMin, activityAmountMax, activityScenario].filter(Boolean).length;
                 return (
                   <button
-                    key={filter.id}
-                    onClick={() =>
-                      setActivityFilters((prev) =>
-                        isActive ? prev.filter((id) => id !== filter.id) : [...prev, filter.id]
-                      )
-                    }
-                    className={`${BUTTON_PILL_BASE} ${
-                      isActive
-                        ? 'bg-primary-light text-primary border-primary/30'
-                        : 'bg-white text-on-surface-secondary hover:bg-surface-dim'
-                    }`}
+                    onClick={() => setActivityShowAdvanced((v) => !v)}
+                    className={BUTTON_GHOST}
                   >
-                    {isActive && <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check</span>}
-                    {filter.label}
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{activityShowAdvanced ? 'expand_less' : 'expand_more'}</span>
+                    {activityShowAdvanced ? 'Fewer' : 'More'}
+                    {moreCount > 0 && (
+                      <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-white text-[10px] font-bold">{moreCount}</span>
+                    )}
                   </button>
                 );
-              })}
-              {(activityFilters.length > 0 || activityQuery) && (
+              })()}
+              {hasActiveFilters && (
                 <button
-                  onClick={() => { setActivityFilters([]); setActivityQuery(''); }}
+                  onClick={() => {
+                    setActivityQuery('');
+                    setActivityType('');
+                    setActivityDateFrom('');
+                    setActivityDateTo('');
+                    setActivityUser('');
+                    setActivityActionType('');
+                    setActivityYear('');
+                    setActivityMonth('');
+                    setActivitySort('newest');
+                    setActivityShowAdvanced(false);
+                    setActivityCashFlowCat('');
+                    setActivityFlowDirection('');
+                    setActivityAmountMin('');
+                    setActivityAmountMax('');
+                    setActivityScenario('');
+                  }}
                   className={BUTTON_GHOST}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
@@ -1219,7 +1339,126 @@ export default function App() {
                 </button>
               )}
             </div>
-            <ActivityLog entries={finalActivity} loading={activityLoading} />
+            {/* Secondary filters row (expandable) */}
+            {activityShowAdvanced && (
+              <div className="px-4 py-2 flex items-center gap-3 flex-wrap border-b border-surface-border">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">From:</label>
+                  <input
+                    type="date"
+                    value={activityDateFrom}
+                    onChange={(e) => setActivityDateFrom(e.target.value)}
+                    className={`${CONTROL_PADDED} text-xs`}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">To:</label>
+                  <input
+                    type="date"
+                    value={activityDateTo}
+                    onChange={(e) => setActivityDateTo(e.target.value)}
+                    className={`${CONTROL_PADDED} text-xs`}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">Year:</label>
+                  <select
+                    value={activityYear}
+                    onChange={(e) => setActivityYear(e.target.value)}
+                    className={`${CONTROL_PADDED} text-xs w-20`}
+                  >
+                    <option value="">All</option>
+                    {activityYears.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">Month:</label>
+                  <select
+                    value={activityMonth}
+                    onChange={(e) => setActivityMonth(e.target.value)}
+                    className={`${CONTROL_PADDED} text-xs w-20`}
+                  >
+                    <option value="">All</option>
+                    {MONTHS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                {activityCashFlowCats.length > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs font-medium text-on-surface-tertiary">CF Cat:</label>
+                    <select
+                      value={activityCashFlowCat}
+                      onChange={(e) => setActivityCashFlowCat(e.target.value)}
+                      className={`${CONTROL_PADDED} text-xs`}
+                    >
+                      <option value="">All</option>
+                      {activityCashFlowCats.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">Direction:</label>
+                  <select
+                    value={activityFlowDirection}
+                    onChange={(e) => setActivityFlowDirection(e.target.value)}
+                    className={`${CONTROL_PADDED} text-xs w-24`}
+                  >
+                    <option value="">All</option>
+                    <option value="inflow">Inflow</option>
+                    <option value="outflow">Outflow</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">Min:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={activityAmountMin}
+                    onChange={(e) => setActivityAmountMin(e.target.value)}
+                    placeholder="0"
+                    className={`${CONTROL_PADDED} text-xs w-20`}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs font-medium text-on-surface-tertiary">Max:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={activityAmountMax}
+                    onChange={(e) => setActivityAmountMax(e.target.value)}
+                    placeholder="--"
+                    className={`${CONTROL_PADDED} text-xs w-20`}
+                  />
+                </div>
+                {activityScenarios.length > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs font-medium text-on-surface-tertiary">Scenario:</label>
+                    <select
+                      value={activityScenario}
+                      onChange={(e) => setActivityScenario(e.target.value)}
+                      className={`${CONTROL_PADDED} text-xs w-28`}
+                    >
+                      <option value="">All</option>
+                      {activityScenarios.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+            <ActivityLog
+              entries={finalActivity}
+              loading={activityLoading}
+              filtered={hasActiveFilters}
+            />
           </div>
         )}
 

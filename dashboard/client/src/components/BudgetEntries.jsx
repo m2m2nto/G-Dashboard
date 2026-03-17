@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import ConfirmDialog from './ConfirmDialog.jsx';
+import SearchInput from './SearchInput.jsx';
 import { CONTROL_PADDED, BUTTON_PRIMARY, BUTTON_GHOST, BUTTON_PILL_BASE, BUTTON_NEUTRAL } from '../ui.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
@@ -428,16 +429,12 @@ export default function BudgetEntries({ entries, year, budgetCategories, onAdd, 
 
       {/* Filters row */}
       <div className="px-4 py-2 flex items-center gap-3 flex-wrap border-b border-surface-border">
-        <div className="flex items-center gap-1.5 relative">
-          <span className="material-symbols-outlined absolute left-2 text-on-surface-tertiary pointer-events-none" style={{ fontSize: '16px' }}>search</span>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search..."
-            className={`${CONTROL_PADDED} text-xs w-44 pl-7`}
-          />
-        </div>
+        <SearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search..."
+          className="w-44"
+        />
         <div className="flex items-center gap-1.5">
           <label htmlFor="be-filter-scenario" className="text-xs font-medium text-on-surface-tertiary">Scenario:</label>
           <select

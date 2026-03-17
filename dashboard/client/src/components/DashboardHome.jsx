@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import MetricCard from './MetricCard.jsx';
 import { BUTTON_PRIMARY, BUTTON_NEUTRAL } from '../ui.js';
-import { getYearlySummary, getCashFlow, getBudget, getActivity } from '../api.js';
+import { getYearlySummary, getCashFlow, getBudget } from '../api.js';
 import {
   ResponsiveContainer,
   LineChart,
@@ -67,18 +67,16 @@ const ACTION_BADGES = {
   'budget.refresh': { label: 'Refresh', color: 'bg-orange-100 text-orange-700' },
 };
 
-export default function DashboardHome({ year, monthlyData, onNavigate, onOpenNewTransaction, onSyncCashFlow }) {
+export default function DashboardHome({ year, monthlyData, onNavigate, onOpenNewTransaction, onSyncCashFlow, recentActivity = [] }) {
   const [metrics, setMetrics] = useState(null);
-  const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [cfData, budgetData, activity] = await Promise.all([
+      const [cfData, budgetData] = await Promise.all([
         getCashFlow(year).catch(() => null),
         getBudget(year).catch(() => null),
-        getActivity().catch(() => []),
       ]);
 
       // Calculate metrics from cash flow data
@@ -144,10 +142,6 @@ export default function DashboardHome({ year, monthlyData, onNavigate, onOpenNew
         budgetVariance,
         budgetVariancePct,
       });
-
-
-
-      setRecentActivity(activity.slice(0, 5));
     } catch {
       // Keep defaults
     }
