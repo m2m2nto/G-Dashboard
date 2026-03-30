@@ -1,8 +1,12 @@
 import { readFile, writeFile, access, mkdir, copyFile } from 'fs/promises';
-import { dirname } from 'path';
+import { dirname, basename, join } from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import ExcelJS from 'exceljs';
 import XlsxPopulate from 'xlsx-populate';
 import JSZip from 'jszip';
+
+const execFileAsync = promisify(execFile);
 import {
   MONTHS,
   MONTH_TO_CF_COL,
@@ -29,6 +33,52 @@ import {
 } from '../config.js';
 
 // ---------------------------------------------------------------------------
+// Excel lock-file detection — block writes when the file is open in Excel
+// ---------------------------------------------------------------------------
+
+// Spreadsheet application process names (case-insensitive substring match on lsof COMMAND column)
+const SPREADSHEET_APPS = ['excel', 'numbers', 'soffice', 'libreoffice', 'openoffice'];
+
+export async function assertNotOpenInExcel(filePath) {
+  const name = basename(filePath);
+  const errorMsg = `Cannot complete the operation: the file "${name}" is currently open in a spreadsheet application. Please close it and try again.`;
+
+  // 1. Check lock files (MS Excel ~$ prefix, LibreOffice .~lock prefix)
+  const dir = dirname(filePath);
+  const lockCandidates = [
+    join(dir, `~$${name}`),
+    name.length > 2 ? join(dir, `~$${name.slice(2)}`) : null,
+    join(dir, `.~lock.${name}#`),
+  ].filter(Boolean);
+  for (const lockPath of lockCandidates) {
+    try {
+      await access(lockPath);
+      throw new Error(errorMsg);
+    } catch (err) {
+      if (err.message.includes('Cannot complete the operation')) throw err;
+    }
+  }
+
+  // 2. Fallback: use lsof to check if a spreadsheet app has the file open (macOS/Linux)
+  //    Use +c 0 to get full command names (macOS truncates to 9 chars by default).
+  //    Filter by process name to avoid false positives from OneDrive, Finder, etc.
+  try {
+    const { stdout } = await execFileAsync('lsof', ['+c', '0', filePath], { timeout: 3000 });
+    if (stdout && stdout.trim()) {
+      const lines = stdout.trim().split('\n').slice(1); // skip header
+      const openedBySpreadsheet = lines.some((line) => {
+        const command = line.split(/\s+/)[0]?.toLowerCase().replace(/\\x20/g, ' ') || '';
+        return SPREADSHEET_APPS.some((app) => command.includes(app));
+      });
+      if (openedBySpreadsheet) throw new Error(errorMsg);
+    }
+  } catch (err) {
+    if (err.message.includes('Cannot complete the operation')) throw err;
+    // lsof exits with code 1 when no process has the file open — that's fine
+  }
+}
+
+// ---------------------------------------------------------------------------
 // File-level write mutex — prevents concurrent writes to the same .xlsx file
 // ---------------------------------------------------------------------------
 
@@ -36,9 +86,9 @@ const locks = new Map();
 
 function withLock(filePath, fn) {
   const prev = locks.get(filePath) || Promise.resolve();
-  const next = prev.then(fn, fn);            // run fn after previous finishes (even if it failed)
-  locks.set(filePath, next.catch(() => {}));  // swallow so chain never rejects
-  return next;                                // caller gets the real result/error
+  const next = prev.then(fn, fn);             // run fn after previous finishes (even if it failed)
+  locks.set(filePath, next.catch(() => {}));   // swallow so chain never rejects
+  return next;                                 // caller gets the real result/error
 }
 
 // ---------------------------------------------------------------------------
@@ -388,8 +438,9 @@ function mainTablePath(monthIndex) {
 }
 
 // Remove blank rows from a month's table, compacting the sheet and shrinking the table range.
-export function compactTable(month, year = '2026') {
+export async function compactTable(month, year = '2026') {
   const filePath = getBankingFile(year);
+  await assertNotOpenInExcel(filePath);
   return withLock(filePath, async () => {
     const monthIndex = MONTHS.indexOf(month);
     if (monthIndex < 0) throw new Error(`Unknown month: ${month}`);
@@ -496,8 +547,9 @@ export function compactTable(month, year = '2026') {
   });
 }
 
-export function addTransaction(month, data, year = '2026') {
+export async function addTransaction(month, data, year = '2026') {
   const filePath = getBankingFile(year);
+  await assertNotOpenInExcel(filePath);
   return withLock(filePath, async () => {
   const monthIndex = MONTHS.indexOf(month);
   if (monthIndex < 0) throw new Error(`Unknown month: ${month}`);
@@ -585,8 +637,9 @@ export function addTransaction(month, data, year = '2026') {
 // Banking Transactions (UPDATE — xlsx-populate, no table expansion)
 // ---------------------------------------------------------------------------
 
-export function updateTransaction(month, row, data, year = '2026') {
+export async function updateTransaction(month, row, data, year = '2026') {
   const filePath = getBankingFile(year);
+  await assertNotOpenInExcel(filePath);
   return withLock(filePath, async () => {
   const wb = await XlsxPopulate.fromFileAsync(filePath);
   const ws = wb.sheet(month);
@@ -624,8 +677,9 @@ export function updateTransaction(month, row, data, year = '2026') {
 // Banking Transactions (DELETE — remove row + shrink table via JSZip)
 // ---------------------------------------------------------------------------
 
-export function deleteTransaction(month, row, year = '2026') {
+export async function deleteTransaction(month, row, year = '2026') {
   const filePath = getBankingFile(year);
+  await assertNotOpenInExcel(filePath);
   return withLock(filePath, async () => {
   const monthIndex = MONTHS.indexOf(month);
   if (monthIndex < 0) throw new Error(`Unknown month: ${month}`);
@@ -925,14 +979,54 @@ export async function readElementsDetail() {
 }
 
 // ---------------------------------------------------------------------------
+// Elements — create new element (WRITE — xlsx-populate)
+// ---------------------------------------------------------------------------
+
+export async function createElement(elementName, category) {
+  if (!elementName || !elementName.trim()) {
+    throw new Error('Element name is required');
+  }
+  if (category && !CATEGORY_TO_CF_ROW[category]) {
+    throw new Error(`Invalid cash flow category: "${category}"`);
+  }
+  const filePath = getBankingFile('2026');
+  await assertNotOpenInExcel(filePath);
+  return withLock(filePath, async () => {
+    const wb = await XlsxPopulate.fromFileAsync(filePath);
+    const ws = wb.sheet('Elements');
+    if (!ws) throw new Error('Sheet "Elements" not found');
+
+    // Check for duplicate
+    const maxRow = ws.usedRange() ? ws.usedRange().endCell().rowNumber() : 3;
+    for (let r = 4; r <= maxRow; r++) {
+      const existing = ws.cell(`A${r}`).value();
+      if (existing === elementName.trim()) {
+        throw new Error(`Element "${elementName.trim()}" already exists`);
+      }
+    }
+
+    // Find first empty row starting from row 4
+    let targetRow = maxRow + 1;
+    if (maxRow < 4) targetRow = 4;
+
+    ws.cell(`A${targetRow}`).value(elementName.trim());
+    if (category) ws.cell(`B${targetRow}`).value(category);
+
+    await wb.toFileAsync(filePath);
+    return { elementName: elementName.trim(), category: category || null, row: targetRow };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Elements — bulk-update category (WRITE — xlsx-populate)
 // ---------------------------------------------------------------------------
 
-export function updateElementCategory(elementName, newCategory) {
+export async function updateElementCategory(elementName, newCategory) {
   if (newCategory && !CATEGORY_TO_CF_ROW[newCategory]) {
     throw new Error(`Invalid cash flow category: "${newCategory}"`);
   }
   const filePath = getBankingFile('2026');
+  await assertNotOpenInExcel(filePath);
   return withLock(filePath, async () => {
   const wb = await XlsxPopulate.fromFileAsync(filePath);
   let updated = 0;
@@ -1292,8 +1386,9 @@ export async function syncCashFlow(month, year) {
   return result[month];
 }
 
-export function syncAllCashFlow(monthsToSync = MONTHS, year) {
+export async function syncAllCashFlow(monthsToSync = MONTHS, year) {
   const cfFile = getCashFlowFile();
+  await assertNotOpenInExcel(cfFile);
   return withLock(cfFile, async () => {
   // 1. Read transactions for all requested months (read-only, safe to parallelize)
   const monthData = {};
@@ -1899,6 +1994,7 @@ export function updateBudgetConsuntivoBatch(year, aggregation) {
     let sheetXml = await zip.file(sheetPath).async('string');
 
     // Write only cells that have entry aggregations — preserve Excel master data elsewhere
+    const touchedCells = new Set(); // track "row-monthIndex" for DIFF update
     for (const [key, amount] of aggregation) {
       const [rowStr, miStr] = key.split('-');
       const r = Number(rowStr);
@@ -1907,6 +2003,21 @@ export function updateBudgetConsuntivoBatch(year, aggregation) {
       const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + 3;
       const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
       sheetXml = xmlSetCell(sheetXml, cellRef, amount);
+      touchedCells.add(key);
+    }
+
+    // Update DIFF cached values (offset 4 = consuntivo - possibile)
+    for (const key of touchedCells) {
+      const [rowStr, miStr] = key.split('-');
+      const r = Number(rowStr);
+      const mi = Number(miStr);
+      const baseCol = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH;
+      const possibileRef = `${BUDGET_COL_LETTER[baseCol + 1]}${r}`;
+      const consuntivoRef = `${BUDGET_COL_LETTER[baseCol + 3]}${r}`;
+      const diffRef = `${BUDGET_COL_LETTER[baseCol + 4]}${r}`;
+      const possibile = xmlCellValue(sheetXml, possibileRef);
+      const consuntivo = xmlCellValue(sheetXml, consuntivoRef);
+      sheetXml = xmlSetCell(sheetXml, diffRef, consuntivo - possibile);
     }
 
     zip.file(sheetPath, sheetXml);
@@ -1958,6 +2069,7 @@ export function updateBudgetScenarioBatch(year, scenario, aggregation) {
     const generaleSheetPath = await resolveBudgetSheetPath(zip, generaleSheetName);
     let generaleXml = await zip.file(generaleSheetPath).async('string');
 
+    const touchedGenerale = new Set();
     for (const [key, amount] of aggregation) {
       const [rowStr, miStr] = key.split('-');
       const r = Number(rowStr);
@@ -1966,6 +2078,21 @@ export function updateBudgetScenarioBatch(year, scenario, aggregation) {
       const col = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH + scenarioOffset;
       const cellRef = `${BUDGET_COL_LETTER[col]}${r}`;
       generaleXml = xmlSetCell(generaleXml, cellRef, amount);
+      touchedGenerale.add(key);
+    }
+
+    // Update DIFF cached values (offset 4 = consuntivo - possibile)
+    for (const key of touchedGenerale) {
+      const [rowStr, miStr] = key.split('-');
+      const r = Number(rowStr);
+      const mi = Number(miStr);
+      const baseCol = BUDGET_GENERALE_MONTH_START_COL + mi * BUDGET_GENERALE_COLS_PER_MONTH;
+      const possibileRef = `${BUDGET_COL_LETTER[baseCol + 1]}${r}`;
+      const consuntivoRef = `${BUDGET_COL_LETTER[baseCol + 3]}${r}`;
+      const diffRef = `${BUDGET_COL_LETTER[baseCol + 4]}${r}`;
+      const possibile = xmlCellValue(generaleXml, possibileRef);
+      const consuntivo = xmlCellValue(generaleXml, consuntivoRef);
+      generaleXml = xmlSetCell(generaleXml, diffRef, consuntivo - possibile);
     }
     zip.file(generaleSheetPath, generaleXml);
 

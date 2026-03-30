@@ -43,6 +43,7 @@ import {
   getCategories,
   getElements,
   getElementsDetail,
+  createElement,
   getCategoryHints,
   updateElementCategory,
   getCfBudgetMap,
@@ -445,29 +446,32 @@ export default function App() {
   const handleAddBudgetEntry = async (data) => {
     try {
       await addBudgetEntry(globalYear, data);
-      await Promise.all([loadBudgetEntries(), loadBudget()]);
     } catch (err) {
       pushToast('error', err.message || 'Failed to add entry');
       throw err;
+    } finally {
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
     }
   };
 
   const handleUpdateBudgetEntry = async (id, data) => {
     try {
       await updateBudgetEntry(globalYear, id, data);
-      await Promise.all([loadBudgetEntries(), loadBudget()]);
     } catch (err) {
       pushToast('error', err.message || 'Failed to update entry');
       throw err;
+    } finally {
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
     }
   };
 
   const handleDeleteBudgetEntry = async (id) => {
     try {
       await deleteBudgetEntry(globalYear, id);
-      await Promise.all([loadBudgetEntries(), loadBudget()]);
     } catch (err) {
       pushToast('error', err.message || 'Failed to delete entry');
+    } finally {
+      await Promise.all([loadBudgetEntries(), loadBudget()]);
     }
   };
 
@@ -592,6 +596,11 @@ export default function App() {
     await updateElementCategory(name, category);
     await loadElements();
     getCategoryHints().then(setCategoryHints).catch(() => {});
+  };
+
+  const handleCreateElement = async (name, category) => {
+    await createElement(name, category);
+    await loadElements();
   };
 
   const handleUpdateCfBudgetMapping = async (cfCategory, budgetCategory, budgetRow) => {
@@ -1123,6 +1132,7 @@ export default function App() {
                   loading={elementsLoading}
                   categories={categories}
                   onUpdateCategory={handleUpdateElementCategory}
+                  onCreate={handleCreateElement}
                   onToast={pushToast}
                 />
               </div>

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readCashFlowCategories, readElements, readElementsDetail, getCategoryHints, updateElementCategory, readBudgetGenerale } from '../services/excel.js';
+import { readCashFlowCategories, readElements, readElementsDetail, getCategoryHints, createElement, updateElementCategory, readBudgetGenerale } from '../services/excel.js';
 import { CATEGORY_TO_CF_ROW } from '../config.js';
 import { appendEntry } from '../services/audit.js';
 import { readCfBudgetMap, updateCfBudgetMapping, deleteCfBudgetMapping } from '../services/cfBudgetCategoryMap.js';
@@ -30,6 +30,24 @@ router.get('/elements-detail', async (_req, res) => {
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/elements', async (req, res) => {
+  try {
+    const { name, category } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Element name is required' });
+    }
+    const result = await createElement(name, category || null);
+    appendEntry({
+      action: 'element.create',
+      details: { element: result.elementName, category: result.category },
+    }).catch(() => {});
+    res.json(result);
+  } catch (err) {
+    const status = err.message.includes('already exists') ? 409 : 500;
+    res.status(status).json({ error: err.message });
   }
 });
 

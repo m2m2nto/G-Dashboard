@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { CONTROL_COMPACT, BUTTON_SECONDARY, BUTTON_NEUTRAL, BUTTON_ICON } from '../ui.js';
+import { useState, useMemo, useRef } from 'react';
+import { CONTROL_COMPACT, CONTROL_PADDED, BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_NEUTRAL, BUTTON_ICON } from '../ui.js';
 
 function SkeletonRow() {
   return (
@@ -13,7 +13,7 @@ function SkeletonRow() {
   );
 }
 
-export default function ElementsTable({ elements, loading, categories, onUpdateCategory, onToast }) {
+export default function ElementsTable({ elements, loading, categories, onUpdateCategory, onCreate, onToast }) {
   const [editingName, setEditingName] = useState(null);
   const [editCategory, setEditCategory] = useState('');
   const [saving, setSaving] = useState(false);
@@ -21,6 +21,11 @@ export default function ElementsTable({ elements, loading, categories, onUpdateC
   const [sortDir, setSortDir] = useState('asc');
   const [filters, setFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [adding, setAdding] = useState(false);
+  const newNameRef = useRef(null);
 
   const toggleSort = (col) => {
     if (sortCol === col) {
@@ -130,13 +135,46 @@ export default function ElementsTable({ elements, loading, categories, onUpdateC
     setSaving(false);
   };
 
+  const handleAdd = async () => {
+    if (!newName.trim()) return;
+    setAdding(true);
+    try {
+      await onCreate(newName.trim(), newCategory || null);
+      onToast?.('success', `Element "${newName.trim()}" created.`);
+      setNewName('');
+      setNewCategory('');
+      setShowAdd(false);
+    } catch (err) {
+      onToast?.('error', err.message || 'Unable to create element.');
+    }
+    setAdding(false);
+  };
+
+  const cancelAdd = () => {
+    setShowAdd(false);
+    setNewName('');
+    setNewCategory('');
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
         <thead>
           <tr className="bg-surface-dim text-on-surface-secondary border-b border-surface-border">
             <td className="px-3 py-2 text-xs font-semibold" colSpan={2}>
-              Total ({displayRows.length}{hasActiveFilters ? `/${elements.length}` : ''} elements)
+              <span className="inline-flex items-center gap-2">
+                Total ({displayRows.length}{hasActiveFilters ? `/${elements.length}` : ''} elements)
+                {!showAdd && (
+                  <button
+                    onClick={() => { setShowAdd(true); setTimeout(() => newNameRef.current?.focus(), 50); }}
+                    className={`${BUTTON_ICON} text-primary`}
+                    title="Add new element"
+                    style={{ width: '28px', height: '28px' }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>add</span>
+                  </button>
+                )}
+              </span>
             </td>
             <td className="px-3 py-2 text-right text-xs font-semibold">{totalCost ? fmt(totalCost) : ''}</td>
             <td className="px-3 py-2 text-right text-xs font-semibold">{totalRevenue ? fmt(totalRevenue) : ''}</td>
@@ -207,6 +245,59 @@ export default function ElementsTable({ elements, loading, categories, onUpdateC
           )}
         </thead>
         <tbody>
+          {showAdd && (
+            <tr className="border-b border-surface-border bg-primary-light">
+              <td className="px-3 py-2 sticky left-0 z-10 bg-primary-light">
+                <input
+                  ref={newNameRef}
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) handleAdd(); if (e.key === 'Escape') cancelAdd(); }}
+                  placeholder="Element name..."
+                  className={CONTROL_PADDED}
+                  disabled={adding}
+                />
+              </td>
+              <td className="px-3 py-2">
+                <div className="flex items-center gap-1">
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className={`flex-1 min-w-0 ${CONTROL_COMPACT}`}
+                    disabled={adding}
+                  >
+                    <option value="">-- None --</option>
+                    <optgroup label="Costs">
+                      {(categories || []).filter((c) => c.startsWith('C-')).map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Revenues">
+                      {(categories || []).filter((c) => c.startsWith('R-')).map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  <button
+                    onClick={handleAdd}
+                    disabled={adding || !newName.trim()}
+                    className={`${BUTTON_PRIMARY} flex-shrink-0 whitespace-nowrap`}
+                  >
+                    {adding ? '...' : 'Add'}
+                  </button>
+                  <button
+                    onClick={cancelAdd}
+                    disabled={adding}
+                    className={`${BUTTON_NEUTRAL} flex-shrink-0 whitespace-nowrap`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </td>
+              <td className="px-3 py-2" colSpan={3}></td>
+            </tr>
+          )}
           {displayRows.map((el) => {
             const isEditing = editingName === el.name;
 

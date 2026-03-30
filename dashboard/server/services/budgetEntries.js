@@ -6,7 +6,8 @@ import {
   BUDGET_REVENUE_ROWS,
   BUDGET_SCENARIOS,
 } from '../config.js';
-import { updateBudgetConsuntivoBatch, updateBudgetScenarioBatch, readBudgetScenarioRaw, readBudgetGeneraleConsuntivoRaw } from './excel.js';
+import { updateBudgetConsuntivoBatch, updateBudgetScenarioBatch, readBudgetScenarioRaw, readBudgetGeneraleConsuntivoRaw, assertNotOpenInExcel } from './excel.js';
+import { getBudgetFile } from '../config.js';
 
 const VALID_PAYMENTS = ['inMonth', '30days', '60days'];
 const PAYMENT_OFFSET = { inMonth: 0, '30days': 1, '60days': 2 };
@@ -201,6 +202,8 @@ export function seedEntries(year, scenario) {
   }
 
   return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
     const data = await readEntriesFile(year);
     if (data.seeded[scenario]) {
       throw new Error(`Scenario "${scenario}" is already seeded for ${year}`);
@@ -248,6 +251,8 @@ export function refreshFromExcel(year, scenario) {
   }
 
   return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
     const data = await readEntriesFile(year);
     if (!isConsuntivo && !data.seeded[scenario]) {
       throw new Error(`Scenario "${scenario}" must be seeded before refreshing.`);
@@ -353,6 +358,8 @@ export async function listEntries(year) {
 
 export function addEntry(year, entry) {
   return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
     validateEntry(entry, year);
     const data = await readEntriesFile(year);
     const scenario = entry.scenario || 'consuntivo';
@@ -385,6 +392,8 @@ export function addEntry(year, entry) {
 
 export function updateEntry(year, id, patch) {
   return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
     const data = await readEntriesFile(year);
     const idx = data.entries.findIndex((e) => e.id === id);
     if (idx === -1) throw new Error(`Entry ${id} not found`);
@@ -422,6 +431,8 @@ export function updateEntry(year, id, patch) {
 
 export function deleteEntry(year, id) {
   return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
     const data = await readEntriesFile(year);
     const idx = data.entries.findIndex((e) => e.id === id);
     if (idx === -1) throw new Error(`Entry ${id} not found`);

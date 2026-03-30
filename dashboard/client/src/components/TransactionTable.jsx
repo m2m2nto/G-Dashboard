@@ -315,18 +315,18 @@ export default function TransactionTable({
       <div className="overflow-x-auto">
         <table className="min-w-full">
           <colgroup>
-            <col /> {/* Date */}
-            <col /> {/* Type */}
-            <col style={{ width: '300px' }} /> {/* Recipient — wide */}
-            <col style={{ width: '300px' }} /> {/* Notes — wide */}
-            <col style={{ width: '334px' }} /> {/* IBAN */}
-            <col /> {/* Inflow */}
-            <col /> {/* Outflow */}
-            <col /> {/* Balance */}
-            <col /> {/* Lux CF Category */}
-            <col style={{ width: '200px' }} /> {/* Budget — wide */}
-            <col /> {/* Updated */}
-            <col /> {/* Actions */}
+            <col />
+            <col />
+            <col style={{ width: '300px' }} />
+            <col style={{ width: '300px' }} />
+            <col style={{ width: '334px' }} />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col style={{ width: '200px' }} />
+            <col />
+            <col />
           </colgroup>
           <thead>
             {/* Summary row */}

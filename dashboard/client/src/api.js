@@ -60,6 +60,13 @@ export const getElements = () => request('/metadata/elements');
 
 export const getElementsDetail = () => request('/metadata/elements-detail');
 
+export const createElement = (name, category) =>
+  request('/metadata/elements', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category }),
+  });
+
 export const getCategoryHints = () => request('/metadata/category-hints');
 
 export const updateElementCategory = (name, category) =>
