@@ -6,7 +6,7 @@ const os = require('os');
 const { execSync, spawn } = require('child_process');
 
 const REPO_OWNER = 'm2m2nto';
-const REPO_NAME = 'gulliver-dashboard-releases';
+const REPO_NAME = 'g-dashboard-releases';
 const RELEASES_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
 
 class Updater {

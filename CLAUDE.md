@@ -53,7 +53,7 @@ Every time we push to main, follow this sequence **in order** — do NOT push un
    # Create the release on the dedicated releases repo
    gh release create v{version}-build.{buildNumber} \
      /tmp/G-Dashboard-v{version}-build.{buildNumber}.zip \
-     --repo m2m2nto/gulliver-dashboard-releases \
+     --repo m2m2nto/g-dashboard-releases \
      --title "G-Dashboard {version} (build {buildNumber})" \
      --notes "G-Dashboard v{version} build {buildNumber}" \
      --latest

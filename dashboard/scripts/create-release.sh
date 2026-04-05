@@ -7,13 +7,13 @@ set -euo pipefail
 # Prerequisites:
 #   - gh CLI installed (brew install gh)
 #   - gh auth login (once)
-#   - Public GitHub repo: ddaversa/gulliver-dashboard-releases
+#   - Public GitHub repo: ddaversa/g-dashboard-releases
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DASHBOARD_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd "$DASHBOARD_DIR/.." && pwd)"
 
-REPO="m2m2nto/gulliver-dashboard-releases"
+REPO="m2m2nto/g-dashboard-releases"
 APP_PATH="$PROJECT_ROOT/G-Dashboard.app"
 
 # -------------------------------------------------------------------
