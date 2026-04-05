@@ -1,64 +1,38 @@
-# GL-Dashboard
+# G-Dashboard
 
-A local dashboard for managing Gulliver Lux's banking transactions and cash flow reporting.
+> **This project is experimental and under active development.**
+> Features, data formats, and APIs may change at any time without notice. Use at your own risk — do not rely on it for production financial workflows yet.
 
-> **Note:** This is an experimental project, built as a personal productivity tool rather than a production-grade application.
+A full-stack desktop application for financial management, designed for Italian companies. G-Dashboard helps track banking transactions, build cash flow projections, and manage budgets — all from a single interface backed by Excel files you already use.
 
-## Context
+## Features
 
-Managing financial reporting through Excel spreadsheets gets complex fast — keeping data consistent across workbooks, avoiding manual errors, and maintaining a clear picture of cash flow all become harder as the volume of transactions grows.
+- **Transaction management** — Import, create, edit, and categorize banking transactions with automatic category suggestions based on frequency analysis
+- **Cash flow tracking** — Visualize inflows and outflows by category and month, with automatic sync from transaction data to cash flow sheets
+- **Budget planning** — Create and compare multiple budget scenarios (pessimistic, realistic, optimistic) with cash flow projections
+- **Analytics** — Year-over-year and quarter-over-quarter dashboards for both cash flow and budget data
+- **Activity audit log** — Full traceability of every change with filtering and search
+- **Excel-native storage** — Reads and writes `.xlsx` files directly, preserving formulas and charts, so your data stays in a format you control
+- **Auto-update** — Built-in update mechanism for seamless delivery of new builds
 
-The common (and arguably most reasonable) approach would be to move everything into a database. Instead, this project takes a different route: **the Excel spreadsheets remain the single source of truth**. The dashboard reads from and writes to them directly, adding a layer of validation and consistency on top without replacing the underlying format.
+## Tech stack
 
-This choice is deliberate:
+| Layer | Technology |
+|-------|-----------|
+| Desktop shell | Electron (macOS, Apple Silicon) |
+| Frontend | React 19, Vite 6, Tailwind CSS 3 |
+| Backend | Express 4 (Node.js, ES modules) |
+| Storage | Excel files (ExcelJS + xlsx-populate) and JSON |
+| Tests | Node.js built-in test runner |
 
-- **Retro-compatibility** — If the data ever needs to be shared with someone who doesn't use the dashboard, the Excel files are still perfectly usable on their own. No export step, no data migration.
-- **Shared access via OneDrive/Teams** — The spreadsheets are already shared between parties through Microsoft's collaboration tools. Keeping Excel as the format means the existing sharing workflow stays untouched.
-- **Independence** — The dashboard is a single-user tool. It helps me manage and report on the data without requiring anyone else to adopt it.
+## Italian context
 
-In short: the dashboard exists to make working with the spreadsheets faster and more reliable, not to replace them.
+The app is built for Italian companies: month names use Italian abbreviations (GEN, FEB, MAR, ...), currency is EUR, and category naming follows Italian accounting conventions.
 
-The app is also packaged as a **native macOS application** (via Electron), so it can run as a standalone desktop app without needing a browser or a terminal.
+## About this repository
 
-## Overview
+This repository contains both the **source code** and the **release builds** for auto-update distribution. Releases are published as GitHub Releases with macOS `.zip` archives.
 
-- **Backend** (Node/Express) reads and writes Excel workbooks and persists auxiliary data as JSON in a `.gl-data/` directory.
-- **Frontend** (Vite/React) provides six sections: Home, Transactions, Cash Flow, Budget, Analytics, and Activity.
-- **Cash flow sync** writes directly into the Cash Flow workbook while preserving Excel structure (formulas, charts, table ranges).
-- **Desktop app** packaged via Electron for standalone macOS use.
+---
 
-## Stack
-
-- Node.js (ESM)
-- Express 4.x
-- ExcelJS 4.x, XlsxPopulate 1.x, JSZip 3.x
-- React 19.x + Vite 6.x + Tailwind 3.x
-- Electron + electron-builder (desktop packaging)
-
-## Run
-
-From `dashboard/`:
-
-```bash
-npm install
-npm run dev
-```
-
-- Client: http://localhost:5173
-- Server: http://localhost:3001
-
-To build the desktop app:
-
-```bash
-bash scripts/build-electron.sh
-```
-
-## Notes
-
-- Excel file paths are configured through the Settings panel (project manifest). On first launch, the app prompts you to select or create a project pointing to your workbooks.
-- Cash flow sync targets the worksheet for the requested year (defaults to the latest numeric year in the workbook).
-- Auxiliary data (budget entries, category mappings, audit log) is stored as JSON in `.gl-data/` inside the project folder.
-
-## Changelog
-
-See [HANDOFF.md](HANDOFF.md) for a session-by-session log of changes.
+**Experimental** — This is a personal/internal tool in early development. There are no stability guarantees, no migration paths between versions, and breaking changes are expected. Contributions and issues are welcome, but please keep the experimental nature in mind.
