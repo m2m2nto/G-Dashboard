@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useDeferredValue } from 'react';
 import MonthSelector from './components/MonthSelector.jsx';
 import TransactionTable from './components/TransactionTable.jsx';
 import TransactionForm from './components/TransactionForm.jsx';
@@ -10,6 +10,7 @@ import CashFlowProjection from './components/CashFlowProjection.jsx';
 import CashFlowByBudget from './components/CashFlowByBudget.jsx';
 import ElementsTable from './components/ElementsTable.jsx';
 import CategoryMapping from './components/CategoryMapping.jsx';
+import CashFlowDocuments from './components/CashFlowDocuments.jsx';
 import ChartsView from './components/ChartsView.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
 import WelcomeSetup from './components/WelcomeSetup.jsx';
@@ -18,6 +19,7 @@ import ActivityLog from './components/ActivityLog.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
 import BudgetEntriesDialog from './components/BudgetEntriesDialog.jsx';
 import TransactionImpactDialog from './components/TransactionImpactDialog.jsx';
+import AttachmentPreviewDialog from './components/AttachmentPreviewDialog.jsx';
 import SubTabBar from './components/SubTabBar.jsx';
 import SearchInput from './components/SearchInput.jsx';
 import { BUTTON_GHOST, BUTTON_PRIMARY, BUTTON_NEUTRAL, BUTTON_PILL_BASE, CONTROL_SELECT, CONTROL_PADDED } from './ui.js';
@@ -28,6 +30,10 @@ import {
   addTransaction,
   updateTransaction,
   deleteTransaction,
+  attachTransactionFile,
+  removeTransactionAttachment,
+  moveTransactionAttachment,
+  verifyAttachments,
   getCashFlow,
   getCashFlowYears,
   syncAll,
@@ -59,6 +65,25 @@ import {
 } from './api.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
+const ATTACHMENT_ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx', '.xls', '.xlsx'];
+
+function sanitizeAttachmentPathSegment(value) {
+  return String(value || '')
+    .replace(/[<>:"/\\|?*]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildAttachmentRelativePath({ date, recipient, originalFileName, customRelativePath }) {
+  if (customRelativePath) return customRelativePath.trim();
+  const ext = ATTACHMENT_ALLOWED_EXTENSIONS.find((candidate) => originalFileName?.toLowerCase().endsWith(candidate))
+    || (originalFileName?.includes('.') ? originalFileName.slice(originalFileName.lastIndexOf('.')) : '');
+  const safeRecipient = sanitizeAttachmentPathSegment(recipient);
+  const dateDigits = String(date || '').replace(/-/g, '');
+  const year = dateDigits.slice(0, 4);
+  const baseName = sanitizeAttachmentPathSegment(`${dateDigits} - ${recipient}`);
+  return `${year}/${safeRecipient}/${baseName}${ext}`;
+}
 
 const CF_SUB_TABS = [
   { id: 'overview', label: 'Overview', icon: 'payments' },
@@ -66,6 +91,7 @@ const CF_SUB_TABS = [
   { id: 'lux-cashflow', label: 'Lux Cash Flow', icon: 'monitoring' },
   { id: 'recipients', label: 'Recipients', icon: 'category' },
   { id: 'mapping', label: 'Mapping', icon: 'link' },
+  { id: 'documents', label: 'Documents', icon: 'folder_open' },
 ];
 
 const BUDGET_SUB_TABS = [
@@ -85,6 +111,7 @@ export default function App() {
   const [budgetView, setBudgetView] = useState('overview');
   const [entriesDialog, setEntriesDialog] = useState(null);
   const [pendingTx, setPendingTx] = useState(null); // { data, row (if update) }
+  const [previewAttachment, setPreviewAttachment] = useState(null);
   const [analyticsView, setAnalyticsView] = useState('cashflow');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem('g-dash-sidebar-collapsed') === 'true';
@@ -269,6 +296,21 @@ export default function App() {
     }
     if (!silent) setTxLoading(false);
   }, [globalYear, month, pushToast]);
+
+  // ── Startup attachment verification (background, non-blocking) ──
+  const attachmentsVerifiedRef = useRef(false);
+  useEffect(() => {
+    if (needsSetup !== false) return;
+    if (attachmentsVerifiedRef.current) return;
+    attachmentsVerifiedRef.current = true;
+    verifyAttachments()
+      .then((result) => {
+        if (result?.updated > 0) {
+          loadTransactions({ silent: true }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [needsSetup, loadTransactions]);
 
   useEffect(() => {
     if (section === 'cashflow' && cfView === 'transactions') loadTransactions();
@@ -518,6 +560,23 @@ export default function App() {
     await loadTransactions({ silent: true });
   };
 
+  const handleOpenAttachment = async (row) => {
+    const tx = transactions.find((t) => t.row === row);
+    const fileName = tx?.attachment?.fileName || 'attachment';
+    setPreviewAttachment({ year: globalYear, month, row, fileName });
+  };
+
+  const handleRemoveAttachment = async (row, { deleteFile }) => {
+    await removeTransactionAttachment(globalYear, month, row, { deleteFile });
+    await loadTransactions({ silent: true });
+  };
+
+  const handleAttachFileForRow = async (row, { relativePath, absolutePath }) => {
+    const result = await attachTransactionFile(globalYear, month, row, { relativePath, absolutePath });
+    await loadTransactions({ silent: true });
+    return result;
+  };
+
   const handleAddTransaction = async (formData) => {
     setPendingTx({ data: formData });
     return true;
@@ -526,30 +585,36 @@ export default function App() {
   const handleConfirmTransaction = async () => {
     if (!pendingTx) return;
     const { data, row } = pendingTx;
+    const { attachmentPick, ...transactionData } = data;
     const isUpdate = row != null;
+    const originalTx = isUpdate ? transactions.find((t) => t.row === row) : null;
+    const originalAttachment = originalTx?.attachment || null;
+    const recipientChanged = originalTx && transactionData.transaction !== originalTx.transaction;
+    const dateChanged = originalTx && transactionData.date !== originalTx.date;
     setSubmitting(true);
     let result = null;
+    let successMessage = isUpdate ? 'Transaction updated.' : 'Transaction added.';
     try {
       if (isUpdate) {
-        await updateTransaction(globalYear, month, row, data);
-        if (data.cashFlow && data.transaction) {
-          await updateElementCategory(data.transaction, data.cashFlow);
+        await updateTransaction(globalYear, month, row, transactionData);
+        if (transactionData.cashFlow && transactionData.transaction) {
+          await updateElementCategory(transactionData.transaction, transactionData.cashFlow);
           getCategoryHints().then(setCategoryHints).catch(() => {});
         }
       } else {
-        result = await addTransaction(globalYear, month, data);
+        result = await addTransaction(globalYear, month, transactionData);
         if (result.year && result.year !== globalYear) setGlobalYear(result.year);
         if (result.month && result.month !== month) setMonth(result.month);
       }
       // Sync the linked budget entry (1-1 with transaction)
       {
-        const txYear = data.date ? data.date.slice(0, 4) : globalYear;
-        const txMonth = data.date ? data.date.slice(5, 7) : null;
+        const txYear = transactionData.date ? transactionData.date.slice(0, 4) : globalYear;
+        const txMonth = transactionData.date ? transactionData.date.slice(5, 7) : null;
         const txMonthName = txMonth ? ['GEN','FEB','MAR','APR','MAG','GIU','LUG','AGO','SET','OTT','NOV','DIC'][parseInt(txMonth, 10) - 1] : month;
         // For add: use result.row; for update: use row from pendingTx
         const txRow = isUpdate ? row : result?.row;
         const txKey = txRow != null ? `${txMonthName}-${txRow}` : null;
-        const amount = Number(data.inflow) || Number(data.outflow) || 0;
+        const amount = Number(transactionData.inflow) || Number(transactionData.outflow) || 0;
 
         try {
           // Find existing linked entry
@@ -557,16 +622,16 @@ export default function App() {
             ? budgetEntries.find((e) => e.transactionKey === txKey)
             : null;
 
-          if (data.budgetCategory && data.budgetRow != null && amount) {
+          if (transactionData.budgetCategory && transactionData.budgetRow != null && amount) {
             const entryData = {
-              date: data.date,
-              description: data.transaction || data.notes || '',
-              category: data.budgetCategory,
-              budgetRow: Number(data.budgetRow),
+              date: transactionData.date,
+              description: transactionData.transaction || transactionData.notes || '',
+              category: transactionData.budgetCategory,
+              budgetRow: Number(transactionData.budgetRow),
               amount,
               payment: 'inMonth',
               scenario: 'consuntivo',
-              notes: data.notes || '',
+              notes: transactionData.notes || '',
               transactionKey: txKey,
             };
             if (existing) {
@@ -582,10 +647,43 @@ export default function App() {
         } catch (err) {
           pushToast('error', 'Transaction saved but budget entry failed: ' + (err.message || ''));
         }
+        if (isUpdate && originalAttachment && (recipientChanged || dateChanged)) {
+          const newRelativePath = buildAttachmentRelativePath({
+            date: transactionData.date,
+            recipient: transactionData.transaction,
+            originalFileName: originalAttachment.originalFileName || originalAttachment.fileName,
+          });
+          if (newRelativePath && newRelativePath !== originalAttachment.relativePath) {
+            const shouldMove = window.confirm(
+              `The transaction's default attachment path has changed:\n\nFrom: ${originalAttachment.relativePath}\nTo:   ${newRelativePath}\n\nClick OK to move the file, or Cancel to keep it at the current location.`,
+            );
+            if (shouldMove) {
+              try {
+                await moveTransactionAttachment(globalYear, month, row, newRelativePath);
+                successMessage = 'Transaction updated and attachment moved.';
+              } catch (err) {
+                pushToast('error', 'Transaction updated but attachment move failed: ' + (err.message || ''));
+              }
+            }
+          }
+        }
+        if (!isUpdate && attachmentPick && txRow != null) {
+          try {
+            const attachResult = await attachTransactionFile(result.year, result.month, txRow, {
+              relativePath: attachmentPick.relativePath || undefined,
+              absolutePath: attachmentPick.absolutePath || undefined,
+            });
+            successMessage = attachResult?.mode === 'link'
+              ? 'Transaction added and attachment linked.'
+              : 'Transaction added with attachment.';
+          } catch (err) {
+            pushToast('error', 'Transaction saved but attachment failed: ' + (err.message || ''));
+          }
+        }
       }
       await loadTransactions({ silent: true });
       setPendingTx(null);
-      pushToast('success', isUpdate ? 'Transaction updated.' : 'Transaction added.');
+      pushToast('success', successMessage);
     } catch (err) {
       pushToast('error', err.message || (isUpdate ? 'Unable to update transaction.' : 'Unable to add transaction.'));
     }
@@ -1035,6 +1133,9 @@ export default function App() {
                   budgetCategories={budgetCategoriesList}
                   onUpdate={handleUpdateTransaction}
                   onDelete={handleDeleteTransaction}
+                  onOpenAttachment={handleOpenAttachment}
+                  onRemoveAttachment={handleRemoveAttachment}
+                  onAttachFile={handleAttachFileForRow}
                   onToast={pushToast}
                 />
               </div>
@@ -1149,6 +1250,13 @@ export default function App() {
                   onToast={pushToast}
                 />
               </div>
+            )}
+
+            {cfView === 'documents' && (
+              <CashFlowDocuments
+                onToast={pushToast}
+                onOpenAttachment={(target) => setPreviewAttachment(target)}
+              />
             )}
           </div>
         )}
@@ -1495,6 +1603,13 @@ export default function App() {
         onConfirm={handleConfirmTransaction}
         onCancel={() => setPendingTx(null)}
         submitting={submitting}
+      />
+
+      <AttachmentPreviewDialog
+        open={!!previewAttachment}
+        target={previewAttachment}
+        onClose={() => setPreviewAttachment(null)}
+        onError={(msg) => pushToast('error', msg)}
       />
 
       {/* Settings Panel */}

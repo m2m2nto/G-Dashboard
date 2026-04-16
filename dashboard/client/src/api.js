@@ -54,6 +54,81 @@ export const updateTransaction = (year, month, row, data) =>
 export const deleteTransaction = (year, month, row) =>
   request(`/transactions/${year}/${month}/${row}`, { method: 'DELETE' });
 
+export const uploadTransactionAttachment = async (year, month, row, { file, relativePath } = {}) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (relativePath) formData.append('relativePath', relativePath);
+
+  const res = await fetch(`${BASE}/transactions/${year}/${month}/${row}/attachment/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+};
+
+export const linkTransactionAttachment = (year, month, row, relativePath) =>
+  request(`/transactions/${year}/${month}/${row}/attachment/link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relativePath }),
+  });
+
+export const moveTransactionAttachment = (year, month, row, relativePath) =>
+  request(`/transactions/${year}/${month}/${row}/attachment/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relativePath }),
+  });
+
+export const getTransactionAttachmentOpenUrl = (year, month, row) =>
+  `${BASE}/transactions/${year}/${month}/${row}/attachment/open`;
+
+export const getTransactionAttachmentDownloadUrl = (year, month, row) =>
+  `${BASE}/transactions/${year}/${month}/${row}/attachment/open?download=1`;
+
+export const openTransactionAttachmentExternal = (year, month, row) =>
+  request(`/transactions/${year}/${month}/${row}/attachment/external-open`, {
+    method: 'POST',
+  });
+
+export const attachTransactionFile = (year, month, row, { relativePath, absolutePath } = {}) =>
+  request(`/transactions/${year}/${month}/${row}/attachment/attach`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relativePath, absolutePath }),
+  });
+
+export const removeTransactionAttachment = (year, month, row, { deleteFile } = {}) =>
+  request(`/transactions/${year}/${month}/${row}/attachment`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deleteFile: !!deleteFile }),
+  });
+
+export const searchAttachments = (query) =>
+  request(`/attachments/search${query ? `?q=${encodeURIComponent(query)}` : ''}`);
+
+export const verifyAttachments = () =>
+  request('/attachments/verify', { method: 'POST' });
+
+export const nativeSelectAttachmentFile = ({ title } = {}) =>
+  request('/attachments/native-select-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+
+export const nativeSelectAttachmentFolder = ({ title } = {}) =>
+  request('/attachments/native-select-folder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+
 export const getCategories = () => request('/metadata/categories');
 
 export const getElements = () => request('/metadata/elements');
@@ -130,11 +205,11 @@ export const refreshBudgetEntries = (year, scenario) =>
 
 export const getSettings = () => request('/settings');
 
-export const updateSettings = ({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles }) =>
+export const updateSettings = ({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles, attachmentRoot }) =>
   request('/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles }),
+    body: JSON.stringify({ bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles, attachmentRoot }),
   });
 
 export const resetSettings = () =>

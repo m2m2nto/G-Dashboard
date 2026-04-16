@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { resolve, dirname } from 'path';
 import { homedir, platform } from 'os';
@@ -20,6 +20,7 @@ import {
   setActiveUser,
 } from '../services/project.js';
 import { detectFilesInDir, detectFileType, buildProposal } from '../services/detect.js';
+import { getSettings, updateSettings } from '../services/settings.js';
 
 const router = Router();
 
@@ -41,6 +42,7 @@ router.get('/', (req, res) => {
   const defaults = getDefaultFilePaths();
   const manifest = getManifest();
   const version = manifestVersion(manifest);
+  const settings = getSettings();
 
   const isCustom =
     paths.bankingFile !== defaults.bankingFile ||
@@ -48,6 +50,7 @@ router.get('/', (req, res) => {
 
   const response = {
     ...paths,
+    attachmentRoot: settings.attachmentRoot,
     defaults,
     isCustom,
     projectDir,
@@ -228,8 +231,8 @@ router.post('/create-project', (req, res) => {
 });
 
 router.put('/', (req, res) => {
-  const { bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles } = req.body;
-  if (!bankingFile && !cashFlowFile && !budgetFile && !archiveDir && !transactionFiles) {
+  const { bankingFile, cashFlowFile, budgetFile, archiveDir, transactionFiles, attachmentRoot } = req.body;
+  if (!bankingFile && !cashFlowFile && !budgetFile && !archiveDir && !transactionFiles && attachmentRoot === undefined) {
     return res.status(400).json({ error: 'At least one path is required' });
   }
 
@@ -254,8 +257,25 @@ router.put('/', (req, res) => {
     update.transactionFiles = transactionFiles;
   }
 
+  let nextAttachmentRoot;
+  if (attachmentRoot !== undefined) {
+    if (attachmentRoot) {
+      if (!existsSync(attachmentRoot)) return res.status(400).json({ error: 'Attachment root does not exist' });
+      if (!statSync(attachmentRoot).isDirectory()) return res.status(400).json({ error: 'Attachment root must be a directory' });
+      nextAttachmentRoot = resolve(attachmentRoot);
+    } else {
+      nextAttachmentRoot = undefined;
+    }
+  }
+
   const merged = { ...current, ...update };
   setFilePaths(merged);
+
+  const settingsPatch = {};
+  if (attachmentRoot !== undefined) {
+    settingsPatch.attachmentRoot = nextAttachmentRoot;
+  }
+  const settings = attachmentRoot !== undefined ? updateSettings(settingsPatch) : getSettings();
 
   const defaults = getDefaultFilePaths();
   const isCustom =
@@ -264,6 +284,7 @@ router.put('/', (req, res) => {
 
   res.json({
     ...merged,
+    attachmentRoot: settings.attachmentRoot,
     projectDir: getProjectDir(),
     hasProject: hasProject(),
     defaults,

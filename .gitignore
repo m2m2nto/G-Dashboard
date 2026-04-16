@@ -16,6 +16,7 @@ test-results/
 *.iml
 *.iws
 .vscode/
+.pi/
 
 # Environment
 .env*
@@ -29,5 +30,6 @@ Banking transactions/
 
 # Local app data
 .gl-data/
+.gulliver-data/
 
 *.app

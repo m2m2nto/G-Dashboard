@@ -9,6 +9,7 @@ import activityRouter from './routes/activity.js';
 import settingsRouter from './routes/settings.js';
 import budgetRouter from './routes/budget.js';
 import budgetEntriesRouter from './routes/budgetEntries.js';
+import attachmentsRouter from './routes/attachments.js';
 import { ensureBankingFile } from './services/excel.js';
 
 const app = express();
@@ -25,6 +26,7 @@ app.use('/api/activity', activityRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/budget', budgetRouter);
 app.use('/api/budget-entries', budgetEntriesRouter);
+app.use('/api/attachments', attachmentsRouter);
 
 // In .app bundle mode, serve the built client as static files
 const APP_DIR = process.env.GULLIVER_APP_DIR;

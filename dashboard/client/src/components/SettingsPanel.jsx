@@ -59,6 +59,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
   const [cashFlowFile, setCashFlowFile] = useState('');
   const [budgetFile, setBudgetFile] = useState('');
   const [archiveDir, setArchiveDir] = useState('');
+  const [attachmentRoot, setAttachmentRoot] = useState('');
   const [transactionFiles, setTransactionFiles] = useState({});
   const [txFileStatus, setTxFileStatus] = useState({});
   const [origPaths, setOrigPaths] = useState({});
@@ -79,6 +80,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
       setCashFlowFile(s.cashFlowFile || '');
       setBudgetFile(s.budgetFile || '');
       setArchiveDir(s.archiveDir || '');
+      setAttachmentRoot(s.attachmentRoot || '');
       setTransactionFiles(s.transactionFiles || {});
       setTxFileStatus(s.transactionFileStatus || {});
       setVersion(s.manifestVersion || 1);
@@ -87,6 +89,7 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
         cashFlowFile: s.cashFlowFile,
         budgetFile: s.budgetFile,
         archiveDir: s.archiveDir,
+        attachmentRoot: s.attachmentRoot,
         transactionFiles: s.transactionFiles || {},
       });
       setFileStatus(s.fileStatus || {});
@@ -112,10 +115,12 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
   const dirty = isV2
     ? cashFlowFile !== origPaths.cashFlowFile ||
       budgetFile !== origPaths.budgetFile ||
+      attachmentRoot !== origPaths.attachmentRoot ||
       JSON.stringify(transactionFiles) !== JSON.stringify(origPaths.transactionFiles)
     : bankingFile !== origPaths.bankingFile ||
       cashFlowFile !== origPaths.cashFlowFile ||
-      archiveDir !== origPaths.archiveDir;
+      archiveDir !== origPaths.archiveDir ||
+      attachmentRoot !== origPaths.attachmentRoot;
 
   const verifyFile = async (path, key) => {
     setChecking((c) => ({ ...c, [key]: true }));
@@ -246,18 +251,37 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
   };
 
 
+  const handleBrowseAttachmentRoot = async () => {
+    const dir = await selectDirectory({ title: 'Select Attachment Root', defaultPath: attachmentRoot || projectDir });
+    if (dir) {
+      setAttachmentRoot(dir);
+      verifyDir(dir, 'attachmentRoot');
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       const payload = isV2
-        ? { cashFlowFile, budgetFile, transactionFiles }
-        : { bankingFile, cashFlowFile, archiveDir };
+        ? { cashFlowFile, budgetFile, transactionFiles, attachmentRoot }
+        : { bankingFile, cashFlowFile, archiveDir, attachmentRoot };
       const result = await updateSettings(payload);
       setFileStatus(result.fileStatus);
+      setAttachmentRoot(result.attachmentRoot || '');
       if (isV2) {
-        setOrigPaths({ cashFlowFile: result.cashFlowFile, budgetFile: result.budgetFile, transactionFiles: result.transactionFiles || {} });
+        setOrigPaths({
+          cashFlowFile: result.cashFlowFile,
+          budgetFile: result.budgetFile,
+          attachmentRoot: result.attachmentRoot,
+          transactionFiles: result.transactionFiles || {},
+        });
       } else {
-        setOrigPaths({ bankingFile: result.bankingFile, cashFlowFile: result.cashFlowFile, archiveDir: result.archiveDir });
+        setOrigPaths({
+          bankingFile: result.bankingFile,
+          cashFlowFile: result.cashFlowFile,
+          archiveDir: result.archiveDir,
+          attachmentRoot: result.attachmentRoot,
+        });
       }
       onSaved?.();
     } catch {
@@ -303,6 +327,16 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
         )}
 
         <div className="space-y-3 mb-4">
+          <FileSection
+            icon="attach_file"
+            label="Attachment Root"
+            description="Root folder where transaction attachments are stored outside Excel."
+            path={attachmentRoot}
+            status={fileStatus.attachmentRoot}
+            onBrowse={handleBrowseAttachmentRoot}
+            checking={checking.attachmentRoot}
+          />
+
           {/* Cash Flow File (both v1 and v2) */}
           <FileSection
             icon="monitoring"

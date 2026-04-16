@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { CONTROL_COMPACT, BUTTON_SECONDARY, BUTTON_NEUTRAL, BUTTON_GHOST, BUTTON_DANGER, BUTTON_ICON } from '../ui.js';
 import ConfirmDialog from './ConfirmDialog';
+import { nativeSelectAttachmentFile } from '../api.js';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -24,6 +25,7 @@ function SkeletonRow() {
       <td className="px-3 py-2.5"><div className="skeleton h-4 w-16" /></td>
       <td className="px-3 py-2.5"><div className="skeleton h-4 w-20" /></td>
       <td className="px-3 py-2.5"><div className="skeleton h-4 w-16" /></td>
+      <td className="px-3 py-2.5"><div className="skeleton h-4 w-16" /></td>
       <td className="px-3 py-2.5" />
     </tr>
   );
@@ -39,6 +41,9 @@ export default function TransactionTable({
   budgetCategories,
   onUpdate,
   onDelete,
+  onOpenAttachment,
+  onRemoveAttachment,
+  onAttachFile,
   onToast,
 }) {
   const [editingRow, setEditingRow] = useState(null);
@@ -146,7 +151,7 @@ export default function TransactionTable({
         <table className="min-w-full">
           <thead>
             <tr className="border-b border-surface-border bg-surface-dim">
-              {['Date', 'Type', 'Recipient', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Lux CF Category', 'Budget Category', 'Updated', ''].map((h, i) => (
+              {['Date', 'Type', 'Recipient', 'Notes', 'IBAN', 'Inflow', 'Outflow', 'Balance', 'Lux CF Category', 'Budget Category', 'Updated', 'Document', ''].map((h, i) => (
                 <th key={i} className={`px-3 py-2 text-left text-xs font-medium text-on-surface-secondary ${i === 0 ? 'sticky top-0 left-0 z-20' : 'sticky top-0 z-10'} bg-surface-dim ${i >= 5 && i <= 7 ? 'text-right' : ''}`}>{h}</th>
               ))}
             </tr>
@@ -326,7 +331,8 @@ export default function TransactionTable({
             <col />
             <col style={{ width: '200px' }} />
             <col />
-            <col />
+            <col style={{ width: '110px' }} />
+            <col style={{ width: '160px' }} />
           </colgroup>
           <thead>
             {/* Summary row */}
@@ -377,6 +383,7 @@ export default function TransactionTable({
                 { key: 'cashFlow', label: 'Lux CF Category', align: 'left' },
                 { key: 'budgetCategory', label: 'Budget Category', align: 'left' },
                 { key: 'updatedAt', label: 'Updated', align: 'left' },
+                { key: 'attachment', label: 'Document', align: 'left' },
               ].map((col) => (
                 <th
                   key={col.key}
@@ -398,7 +405,7 @@ export default function TransactionTable({
                   </span>
                 </th>
               ))}
-              <th className="px-3 py-2 w-24 sticky top-0 z-10 bg-surface-dim"></th>
+              <th className="px-3 py-2 sticky top-0 z-10 bg-surface-dim" style={{ width: '160px' }}></th>
             </tr>
             {/* Filter row */}
             {showFilters && (
@@ -414,6 +421,7 @@ export default function TransactionTable({
                   { key: null },
                   { key: 'cashFlow', placeholder: 'Filter...' },
                   { key: 'budgetCategory', placeholder: 'Filter...' },
+                  { key: null },
                   { key: null },
                 ].map((col, i) => (
                   <td key={i} className={`px-2 py-1 ${col.sticky ? 'sticky left-0 z-10 bg-surface-dim/50' : ''}`}>
@@ -525,6 +533,70 @@ export default function TransactionTable({
                     <td className="px-2 py-1.5 text-xs text-on-surface-tertiary whitespace-nowrap">
                       {tx.updatedAt ? fmtTs(tx.updatedAt) : ''}
                     </td>
+                    <td className="px-2 py-1.5 text-xs text-on-surface-tertiary" onClick={(e) => e.stopPropagation()}>
+                      {tx.attachment ? (
+                        <span className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await onOpenAttachment?.(tx.row);
+                              } catch (err) {
+                                onToast?.('error', err.message || 'Unable to open attachment.');
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-1 cursor-pointer hover:brightness-95 ${tx.attachment.status === 'missing' ? 'bg-red-50 text-red-700' : 'bg-primary-light text-primary'}`}
+                            title={tx.attachment.status === 'missing' ? 'File missing — click to retry preview' : 'Open preview'}
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                              {tx.attachment.status === 'missing' ? 'warning' : 'attach_file'}
+                            </span>
+                            {tx.attachment.status === 'missing' ? 'Missing' : 'Attached'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const confirmRemove = window.confirm('Remove the attachment from this transaction?');
+                              if (!confirmRemove) return;
+                              const deleteFile = window.confirm('Also delete the physical file from disk? Click Cancel to remove only the link.');
+                              try {
+                                await onRemoveAttachment?.(tx.row, { deleteFile });
+                                onToast?.('success', deleteFile ? 'Attachment removed and file deleted.' : 'Attachment link removed.');
+                              } catch (err) {
+                                onToast?.('error', err.message || 'Unable to remove attachment.');
+                              }
+                            }}
+                            className={`${BUTTON_ICON} hover:text-status-negative hover:bg-red-50`}
+                            title="Remove attachment"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>link_off</span>
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Attach a file (upload or link existing — server decides based on path)"
+                          aria-label="Attach file"
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 cursor-pointer text-on-surface-tertiary hover:bg-surface-container hover:text-on-surface-secondary focus:outline-none focus:ring-2 focus:ring-primary"
+                          onClick={async () => {
+                            try {
+                              const picked = await nativeSelectAttachmentFile({ title: 'Attach File' });
+                              if (!picked || (!picked.relativePath && !picked.absolutePath)) return;
+                              const result = await onAttachFile?.(tx.row, {
+                                relativePath: picked.relativePath || undefined,
+                                absolutePath: picked.absolutePath || undefined,
+                              });
+                              onToast?.('success', result?.mode === 'link' ? 'Attachment linked.' : 'Attachment uploaded.');
+                            } catch (err) {
+                              onToast?.('error', err.message || 'Unable to attach file.');
+                            }
+                          }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>attach_file_add</span>
+                          <span className="text-xs">Attach</span>
+                        </button>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <div className="flex items-center gap-1">
                         <button
@@ -575,6 +647,29 @@ export default function TransactionTable({
                   </td>
                   <td className="px-3 py-2 text-xs text-on-surface-tertiary whitespace-nowrap">
                     {tx.updatedAt ? fmtTs(tx.updatedAt) : ''}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-on-surface-tertiary whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    {tx.attachment ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await onOpenAttachment?.(tx.row);
+                          } catch (err) {
+                            onToast?.('error', err.message || 'Unable to open attachment.');
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 cursor-pointer hover:brightness-95 ${tx.attachment.status === 'missing' ? 'bg-red-50 text-red-700' : 'bg-primary-light text-primary'}`}
+                        title={tx.attachment.status === 'missing' ? 'File missing — click to retry preview' : 'Open preview'}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                          {tx.attachment.status === 'missing' ? 'warning' : 'attach_file'}
+                        </span>
+                        {tx.attachment.status === 'missing' ? 'Missing' : 'Attached'}
+                      </button>
+                    ) : (
+                      <span className="text-on-surface-tertiary">—</span>
+                    )}
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap text-right">
                     <span className="inline-flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

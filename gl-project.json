@@ -1,0 +1,15 @@
+{
+  "cashFlowFile": "Cash Flow Gulliver Lux.xlsx",
+  "budgetFile": "20260224 - GulliverLux_Budget&CashFlow (rev. 8).xlsx",
+  "transactionFiles": {
+    "2022": "Banking transactions/Banking transactions - Gulliver Lux 2022.xlsx",
+    "2023": "Banking transactions/Banking transactions - Gulliver Lux 2023.xlsx",
+    "2024": "Banking transactions/Banking transactions - Gulliver Lux 2024.xlsx",
+    "2025": "Banking transactions/Banking transactions - Gulliver Lux 2025.xlsx",
+    "2026": "Banking transactions - Gulliver Lux 2026.xlsx"
+  },
+  "users": [
+    "Danilo"
+  ],
+  "activeUser": "Danilo"
+}

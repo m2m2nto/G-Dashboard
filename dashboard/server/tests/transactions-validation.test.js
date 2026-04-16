@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateTransactionPayload } from '../routes/transactions.js';
+import { validateTransactionPayload, attachTransactionMetadata, parseTransactionRouteParams } from '../routes/transactions.js';
 
 test('rejects invalid IBAN format', () => {
   const { error } = validateTransactionPayload(
@@ -128,4 +128,67 @@ test('allows category without flow in partial update', () => {
 
   assert.ifError(error);
   assert.equal(cleaned.cashFlow, 'C-SPESE EXTRA');
+});
+
+test('parseTransactionRouteParams validates month and row when present', () => {
+  assert.deepEqual(parseTransactionRouteParams({ year: '2026', month: 'apr', row: '12' }), {
+    year: '2026',
+    month: 'APR',
+    row: 12,
+  });
+
+  assert.match(parseTransactionRouteParams({ year: '2026', month: 'bad', row: '12' }).error, /Invalid month/i);
+  assert.match(parseTransactionRouteParams({ year: '2026', month: 'apr', row: '2' }).error, /Invalid row/i);
+});
+
+test('attachTransactionMetadata adds budget timestamp and attachment data to rows', () => {
+  const rows = [
+    {
+      row: 12,
+      cashFlow: 'C-SPESE EXTRA',
+      transaction: 'ACME SRL',
+    },
+    {
+      row: 13,
+      cashFlow: 'R-ALTRO',
+      transaction: 'Client X',
+    },
+  ];
+
+  attachTransactionMetadata(rows, {
+    month: 'APR',
+    txBudgetMap: {
+      12: { category: 'Custom Budget', budgetRow: 44 },
+    },
+    cfBudgetMap: {
+      'R-ALTRO': { budgetCategory: 'Revenue Budget', budgetRow: 22 },
+    },
+    timestamps: {
+      'APR-12': '2026-04-12T10:16:00.000Z',
+    },
+    attachments: {
+      'APR-12': {
+        relativePath: '2026/ACME SRL/20260410 - ACME SRL.pdf',
+        fileName: '20260410 - ACME SRL.pdf',
+        status: 'present',
+        lastVerifiedAt: '2026-04-12T10:16:00.000Z',
+        storageMode: 'uploaded',
+      },
+    },
+  });
+
+  assert.equal(rows[0].budgetCategory, 'Custom Budget');
+  assert.equal(rows[0].budgetRow, 44);
+  assert.equal(rows[0].updatedAt, '2026-04-12T10:16:00.000Z');
+  assert.deepEqual(rows[0].attachment, {
+    relativePath: '2026/ACME SRL/20260410 - ACME SRL.pdf',
+    fileName: '20260410 - ACME SRL.pdf',
+    status: 'present',
+    lastVerifiedAt: '2026-04-12T10:16:00.000Z',
+    storageMode: 'uploaded',
+  });
+
+  assert.equal(rows[1].budgetCategory, 'Revenue Budget');
+  assert.equal(rows[1].budgetRow, 22);
+  assert.equal(rows[1].attachment, undefined);
 });

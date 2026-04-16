@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
-import { CONTROL_COMPACT, BUTTON_PRIMARY } from '../ui.js';
+import { CONTROL_COMPACT, BUTTON_PRIMARY, BUTTON_SECONDARY } from '../ui.js';
+import { nativeSelectAttachmentFile } from '../api.js';
 
 // Parse EU-formatted number string (e.g. "1.234,56" → 1234.56)
 function parseEU(str) {
@@ -27,6 +28,8 @@ export default function TransactionForm({ categories, elements, categoryHints, c
     budgetRow: '',
   });
   const [errors, setErrors] = useState({});
+  const [attachmentPick, setAttachmentPick] = useState(null);
+  const [filePickerError, setFilePickerError] = useState('');
   const cashFlowManual = useRef(false);
   const [cfHighlight, setCfHighlight] = useState(false);
   const highlightTimer = useRef(null);
@@ -143,6 +146,20 @@ export default function TransactionForm({ categories, elements, categoryHints, c
     (flowDirection === 'outflow' && form.cashFlow.startsWith('R-'))
   );
 
+  const handlePickAttachment = async () => {
+    setFilePickerError('');
+    try {
+      const picked = await nativeSelectAttachmentFile({ title: 'Attach File' });
+      if (!picked || (!picked.relativePath && !picked.absolutePath)) return;
+      setAttachmentPick({
+        relativePath: picked.relativePath || null,
+        absolutePath: picked.absolutePath || null,
+      });
+    } catch (err) {
+      setFilePickerError(err.message || 'Unable to choose file.');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const nextErrors = {};
@@ -164,6 +181,7 @@ export default function TransactionForm({ categories, elements, categoryHints, c
       ...form,
       inflow: parseEU(form.inflow) || '',
       outflow: parseEU(form.outflow) || '',
+      attachmentPick,
     });
     if (!ok) return;
     cashFlowManual.current = false;
@@ -179,6 +197,8 @@ export default function TransactionForm({ categories, elements, categoryHints, c
       budgetCategory: '',
       budgetRow: '',
     }));
+    setAttachmentPick(null);
+    setFilePickerError('');
   };
 
   const inputClass = `w-full ${CONTROL_COMPACT}`;
@@ -317,6 +337,36 @@ export default function TransactionForm({ categories, elements, categoryHints, c
               ))}
             </optgroup>
           </select>
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-on-surface-secondary mb-1">Attachment (optional)</label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={BUTTON_SECONDARY}
+              onClick={handlePickAttachment}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>attach_file_add</span>
+              {attachmentPick ? 'Change file' : 'Choose file'}
+            </button>
+            {attachmentPick && (
+              <button
+                type="button"
+                className="text-xs text-on-surface-tertiary hover:text-status-negative"
+                onClick={() => setAttachmentPick(null)}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {attachmentPick && (
+            <p className="mt-1 text-xs text-on-surface-tertiary truncate" title={attachmentPick.absolutePath || attachmentPick.relativePath}>
+              Selected: {attachmentPick.relativePath || attachmentPick.absolutePath}
+            </p>
+          )}
+          {filePickerError && (
+            <p className="mt-1 text-xs text-red-600">{filePickerError}</p>
+          )}
         </div>
       </div>
 

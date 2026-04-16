@@ -8,6 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DASHBOARD_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 STAGING_DIR="$DASHBOARD_DIR/.electron-staging"
 
+# Skip code signing (personal use only, no distribution certificate needed)
+export CSC_IDENTITY_AUTO_DISCOVERY=false
+
 echo "=== Building G-Dashboard Electron App ==="
 echo "Dashboard dir: $DASHBOARD_DIR"
 cd "$DASHBOARD_DIR"
