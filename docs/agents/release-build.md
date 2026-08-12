@@ -7,17 +7,50 @@ Failure modes and their recoveries live in `docs/agents/release-runbook.md`; the
 ## Version & Build Management
 
 Version and build number live in `dashboard/package.json`:
-- `"version"` — semver, for example `"1.1.0"`; bump for feature releases
+- `"version"` — `major.minor.bugfix`; see the rules below
 - `"buildNumber"` — integer build counter, for example `42`; **increment on every build**
 
 Both are injected at build time via Vite `define` (`__APP_VERSION__`, `__APP_BUILD__`) and displayed in the Settings panel footer as `GL-Dashboard v1.1.0 (build 42)`.
+
+### Versioning rules
+
+Classify the commits since the last release and bump the **highest** category that applies:
+
+| Bump | When |
+|------|------|
+| **major** (`1.1.0` → `2.0.0`) | Architectural or storage-format change, data migration required, or anything the user cannot roll back to the previous build without losing data. Example: SQLite becoming the system of record. |
+| **minor** (`1.1.0` → `1.2.0`) | New user-facing feature or section, backwards compatible. |
+| **bugfix** (`1.1.0` → `1.1.1`) | Bug fixes, refactors, docs, tests, dependency bumps — no new feature. |
+
+Lower fields reset to `0` on a higher bump (`1.2.3` → `2.0.0`, not `2.2.3`).
+
+`buildNumber` increments on **every** build, independent of the version — a version
+can ship across several builds.
+
+### Version proposal gate (mandatory)
+
+Before touching `buildNumber`, **propose the new version number to the user and wait
+for their OK.** This is the one approval gate in the release pipeline; everything
+after it runs autonomously. Format:
+
+```text
+Proposed version: 1.1.0 → 2.0.0 (major)
+Reason: <one line — the commit(s) that force this category>
+Commits since v1.1.0: <short list>
+OK to ship as 2.0.0?
+```
+
+If the user approves a different number, use theirs. Write the approved value to
+`"version"` in `dashboard/package.json` in the same edit as the `buildNumber` bump,
+so one commit carries both.
 
 ## Build & Release Workflow
 
 Every time we push to main, follow this sequence **in order**. Do **not** push until the build is complete:
 
 1. **Run all tests**: `npm test`. If any fail, **stop and fix before continuing**.
-2. **Increment the `"buildNumber"`** in `dashboard/package.json`.
+2. **Propose the new `"version"`** per the rules above and **wait for the user's OK**,
+   then write it together with an incremented `"buildNumber"` in `dashboard/package.json`.
 3. **Build the Electron/macOS app**: `bash scripts/build-electron.sh` from `dashboard/`.
 4. **Replace the `.app` at the project root** (use `ditto`, never `cp -R`):
    ```bash

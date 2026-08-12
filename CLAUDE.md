@@ -22,7 +22,11 @@ When the user says 'commit', 'ship', or 'release', always run the FULL workflow:
 ## Version & Build Management
 
 Version and build number live in `dashboard/package.json` (`"version"`, `"buildNumber"`);
-**increment `buildNumber` on every build**. The full release procedure — Electron build,
+**increment `buildNumber` on every build**. `version` is `major.minor.bugfix` —
+major for architectural/storage-format changes needing a migration, minor for new
+features, bugfix for everything else. **Always propose the new version number and
+wait for the user's OK before bumping and building**; that is the only approval gate
+in the release flow. The full release procedure — Electron build,
 `.app` deploy, and GitHub release upload — is in `docs/agents/release-build.md`, with
 failure recoveries in `docs/agents/release-runbook.md`. Read them before releasing.
 

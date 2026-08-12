@@ -18,12 +18,27 @@ import { ensureBankingFile } from './services/banking.js';
 import { useStore } from './services/txStore.js';
 import { runStartupChecks } from './services/consistencyCheck.js';
 import { importRemainingStores } from './services/import/importRemainingStores.js';
+import { createStartupGate } from './services/startupGate.js';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 app.use(cors({ origin: localCorsOptions }));
 app.use(express.json());
+
+// The four non-row-keyed stores (CF Mapping, folder memory, invoice
+// attachments, audit) are DB-backed under either GL_STORE flag, so their
+// one-time import from the JSON archives always runs — and first, before
+// anything can append an audit entry past the empty-table gate. It starts here,
+// as early as possible, and every `/api/*` request waits on it: a request
+// answered mid-import reads a half-populated table and returns wrong numbers
+// with no error. See `services/startupGate.js`.
+app.use('/api', createStartupGate(async () => {
+  const imported = await importRemainingStores();
+  for (const [store, result] of Object.entries(imported)) {
+    if (result.imported > 0) console.log(`Store import: ${store} ${result.imported} record(s) from the JSON archive.`);
+  }
+}));
 
 app.use('/api/transactions', transactionsRouter);
 app.use('/api/cashflow', cashflowRouter);
@@ -54,18 +69,6 @@ app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
   if (process.send) process.send({ type: 'ready', port: PORT });
   if (APP_DIR) console.log(`Serving client from ${resolve(APP_DIR, 'public')}`);
-  // The four non-row-keyed stores (CF Mapping, folder memory, invoice
-  // attachments, audit) are DB-backed under either GL_STORE flag, so their
-  // one-time import from the JSON archives always runs — and first, before
-  // anything can append an audit entry past the empty-table gate.
-  try {
-    const imported = await importRemainingStores();
-    for (const [store, result] of Object.entries(imported)) {
-      if (result.imported > 0) console.log(`Store import: ${store} ${result.imported} record(s) from the JSON archive.`);
-    }
-  } catch (err) {
-    console.error('Remaining-store import failed:', err.message);
-  }
   // Ensure the current year's banking file exists (auto-create from template if needed)
   const currentYear = String(new Date().getFullYear());
   try {

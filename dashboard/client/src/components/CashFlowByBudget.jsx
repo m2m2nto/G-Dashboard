@@ -139,9 +139,9 @@ export default function CashFlowByBudget({ txBudgetSummary, budget, luxCashFlow,
       }
     };
 
-    check('Costi', data.totals.totalCosts, luxTotals.totalCosts);
-    check('Ricavi', data.totals.totalRevenues, luxTotals.totalRevenues);
-    check('Finanziamenti', data.totals.totalFinancing, luxTotals.totalFinancing);
+    check('Costs', data.totals.totalCosts, luxTotals.totalCosts);
+    check('Revenues', data.totals.totalRevenues, luxTotals.totalRevenues);
+    check('Financing', data.totals.totalFinancing, luxTotals.totalFinancing);
 
     return diffs.length > 0 ? diffs : null;
   }, [data, luxCashFlow]);
@@ -149,7 +149,7 @@ export default function CashFlowByBudget({ txBudgetSummary, budget, luxCashFlow,
   if (!data) {
     return (
       <div className="text-center py-16 text-on-surface-secondary">
-        Nessun dato disponibile.
+        No data available.
       </div>
     );
   }
@@ -161,7 +161,7 @@ export default function CashFlowByBudget({ txBudgetSummary, budget, luxCashFlow,
   if (!hasData) {
     return (
       <div className="text-center py-16 text-on-surface-secondary">
-        Nessun dato disponibile.
+        No data available.
       </div>
     );
   }
@@ -234,10 +234,10 @@ export default function CashFlowByBudget({ txBudgetSummary, budget, luxCashFlow,
             <span className="material-symbols-outlined text-amber-600 shrink-0" style={{ fontSize: '20px' }}>warning</span>
             <div className="flex-1">
               <p className="text-sm font-medium text-amber-800">
-                Dati non consistenti con il Cash Flow Lux
+                Data does not match the Lux Cash Flow
               </p>
               <p className="text-xs text-amber-700 mt-1">
-                Il Cash Flow Lux potrebbe non essere sincronizzato con le transazioni, oppure alcune transazioni non sono mappate a una categoria budget.
+                The Lux Cash Flow may be out of sync with the transactions, or some transactions are not mapped to a budget category.
               </p>
               <div className="mt-2 space-y-1">
                 {mismatch.map((section) => (
@@ -266,7 +266,7 @@ export default function CashFlowByBudget({ txBudgetSummary, budget, luxCashFlow,
                 className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-800 bg-white border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <span className={`material-symbols-outlined ${syncing ? 'animate-spin' : ''}`} style={{ fontSize: '16px' }}>sync</span>
-                {syncing ? 'Sincronizzazione…' : 'Sincronizza ora'}
+                {syncing ? 'Syncing…' : 'Sync now'}
               </button>
             )}
           </div>

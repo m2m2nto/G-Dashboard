@@ -967,7 +967,7 @@ export default function CashFlowProjection({ entries, budget, txConsuntivo, onCe
 
       {!hasData && !hasBudgetData && (
         <div className="text-center py-16 text-on-surface-secondary">
-          Nessun dato disponibile.
+          No data available.
         </div>
       )}
 
