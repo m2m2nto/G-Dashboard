@@ -1,20 +1,7 @@
 import { useState, useEffect } from 'react';
+import { badgeFor, describe } from './activityActions.js';
 
 const PAGE_SIZE = 100;
-
-const ACTION_BADGES = {
-  'transaction.add': { label: 'Added', color: 'bg-status-positive/15 text-status-positive' },
-  'transaction.update': { label: 'Updated', color: 'bg-primary-light text-primary' },
-  'transaction.delete': { label: 'Deleted', color: 'bg-status-negative/15 text-status-negative' },
-  'cashflow.sync': { label: 'Synced', color: 'bg-amber-100 text-amber-700' },
-  'cashflow.sync-all': { label: 'Sync All', color: 'bg-amber-100 text-amber-700' },
-  'element.category': { label: 'CF Category', color: 'bg-purple-100 text-purple-700' },
-  'budget.add': { label: 'Budget +', color: 'bg-status-positive/15 text-status-positive' },
-  'budget.update': { label: 'Budget \u2715', color: 'bg-primary-light text-primary' },
-  'budget.delete': { label: 'Budget \u2212', color: 'bg-status-negative/15 text-status-negative' },
-  'budget.seed': { label: 'Seed', color: 'bg-amber-100 text-amber-700' },
-  'budget.refresh': { label: 'Refresh', color: 'bg-orange-100 text-orange-700' },
-};
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   month: 'short',
@@ -22,66 +9,6 @@ const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: '2-digit',
   minute: '2-digit',
 });
-
-const amountFormat = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-
-function formatAmount(val) {
-  if (val == null) return null;
-  return amountFormat.format(val);
-}
-
-function describe(entry) {
-  const { action, year, month, details } = entry;
-
-  switch (action) {
-    case 'transaction.add': {
-      const amount = details?.outflow ? formatAmount(details.outflow) + ' out' : details?.inflow ? formatAmount(details.inflow) + ' in' : '';
-      return [details?.transaction, amount, details?.cashFlow].filter(Boolean).join(' \u2014 ');
-    }
-    case 'transaction.update': {
-      const parts = [details?.transaction || `Row ${details?.row}`];
-      if (details?.changes) {
-        const changeList = Object.entries(details.changes).map(([field, { from, to }]) => {
-          if (field === 'inflow' || field === 'outflow') {
-            return `${field}: ${formatAmount(from) ?? '\u2014'} \u2192 ${formatAmount(to) ?? '\u2014'}`;
-          }
-          return `${field}: ${from ?? '\u2014'} \u2192 ${to ?? '\u2014'}`;
-        });
-        parts.push(changeList.join(', '));
-      }
-      return parts.join(' \u2014 ');
-    }
-    case 'transaction.delete': {
-      const amount = details?.outflow ? formatAmount(details.outflow) + ' out' : details?.inflow ? formatAmount(details.inflow) + ' in' : '';
-      return [details?.transaction, amount].filter(Boolean).join(' \u2014 ');
-    }
-    case 'cashflow.sync':
-      return `Synced ${month} ${year || ''}`.trim();
-    case 'cashflow.sync-all':
-      return `Synced all months ${year || ''}`.trim();
-    case 'element.category': {
-      const from = details?.from || 'none';
-      const to = details?.to || 'none';
-      return `${details?.element}: ${from} \u2192 ${to}`;
-    }
-    case 'budget.add': {
-      const amt = details?.amount ? formatAmount(details.amount) : '';
-      return [details?.description, details?.category, amt, details?.scenario].filter(Boolean).join(' \u2014 ');
-    }
-    case 'budget.update': {
-      const amt = details?.amount ? formatAmount(details.amount) : '';
-      return [details?.description, details?.category, amt, details?.scenario].filter(Boolean).join(' \u2014 ');
-    }
-    case 'budget.delete':
-      return details?.description || details?.id || 'Entry deleted';
-    case 'budget.seed':
-      return `Seeded ${details?.scenario || 'scenario'}${details?.count != null ? ` (${details.count} entries)` : ''}`;
-    case 'budget.refresh':
-      return `Refreshed ${details?.scenario || 'scenario'} \u2014 ${details?.created || 0} adjustments, ${details?.skipped || 0} matched`;
-    default:
-      return action;
-  }
-}
 
 function SkeletonRows() {
   return Array.from({ length: 8 }, (_, i) => (
@@ -128,7 +55,7 @@ export default function ActivityLog({ entries, loading, filtered = false }) {
   return (
     <div className="divide-y divide-surface-border">
       {visible.map((entry, i) => {
-        const badge = ACTION_BADGES[entry.action] || { label: entry.action, color: 'bg-surface-dim text-on-surface-secondary' };
+        const badge = badgeFor(entry.action);
         const monthYear = [entry.month, entry.year].filter(Boolean).join(' ');
         return (
           <div key={`${entry.ts}-${i}`} className="flex items-start gap-3 px-4 py-3 hover:bg-surface-container/50 transition-colors">
@@ -140,7 +67,10 @@ export default function ActivityLog({ entries, loading, filtered = false }) {
                 {entry.user}
               </span>
             )}
-            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0 ${badge.color}`}>
+            <span
+              title={badge.help}
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0 ${badge.color}`}
+            >
               {badge.label}
             </span>
             <span className="text-sm text-on-surface min-w-0">

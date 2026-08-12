@@ -16,6 +16,7 @@ import SettingsPanel from './components/SettingsPanel.jsx';
 import WelcomeSetup from './components/WelcomeSetup.jsx';
 import AppLayout from './components/AppLayout.jsx';
 import ActivityLog from './components/ActivityLog.jsx';
+import ActivityLegendDialog from './components/ActivityLegendDialog.jsx';
 import InvoicesView from './components/InvoicesView.jsx';
 import InvoiceForm from './components/InvoiceForm.jsx';
 import MarkPaidDialog from './components/MarkPaidDialog.jsx';
@@ -212,6 +213,7 @@ export default function App() {
   const [activityMonth, setActivityMonth] = useState('');
   const [activitySort, setActivitySort] = useState('newest');
   const [activityShowAdvanced, setActivityShowAdvanced] = useState(false);
+  const [activityLegendOpen, setActivityLegendOpen] = useState(false);
   const [activityCashFlowCat, setActivityCashFlowCat] = useState('');
   const [activityFlowDirection, setActivityFlowDirection] = useState('');
   const [activityAmountMin, setActivityAmountMin] = useState('');
@@ -1633,10 +1635,16 @@ export default function App() {
                   ? `Showing ${finalActivity.length} of ${activityLog.length}`
                   : `${activityLog.length} entries`)}
               </span>
-              <button onClick={loadActivity} className={BUTTON_GHOST} title="Refresh">
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
-                Refresh
-              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setActivityLegendOpen(true)} className={BUTTON_GHOST} title="What do the badges mean?">
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>help</span>
+                  Legend
+                </button>
+                <button onClick={loadActivity} className={BUTTON_GHOST} title="Refresh">
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>refresh</span>
+                  Refresh
+                </button>
+              </div>
             </div>
             {/* Primary filters row */}
             <div className="px-4 py-2 flex items-center gap-3 flex-wrap border-b border-surface-border">
@@ -1862,6 +1870,7 @@ export default function App() {
               loading={activityLoading}
               filtered={hasActiveFilters}
             />
+            <ActivityLegendDialog open={activityLegendOpen} onClose={() => setActivityLegendOpen(false)} />
           </div>
         )}
 
