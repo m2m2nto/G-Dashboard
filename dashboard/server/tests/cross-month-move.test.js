@@ -45,6 +45,7 @@ openProject(projectDir);
 const { getDb, closeDb } = await import('../services/db.js');
 const { importYearMeta } = await import('../services/import/detectYearLayout.js');
 const { importAllTransactions } = await import('../services/import/importTransactions.js');
+const { importCfBudgetMap } = await import('../services/import/importRemainingStores.js');
 const { readTransactions } = await import('../services/banking.js');
 const { listByMonth, resolveId, useStore } = await import('../services/txStore.js');
 const { editTransaction } = await import('../services/editTransaction.js');
@@ -52,6 +53,7 @@ const { editTransaction } = await import('../services/editTransaction.js');
 const db = getDb();
 await importYearMeta(db);
 await importAllTransactions(db);
+await importCfBudgetMap(db);
 
 const storeRows = async (y, m) => (await listByMonth(y, m)).map((r) => [r.row, r.transaction]);
 const bookRows = async (y, m) => (await readTransactions(m, y)).map((r) => [r.row, r.transaction]);

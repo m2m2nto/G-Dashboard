@@ -1,16 +1,16 @@
 // @ts-check
-import { readFile } from 'fs/promises';
-import { join, isAbsolute } from 'path';
-import { getDataDir } from '../config.js';
-import { writeFileAtomic } from './atomicWrite.js';
+import { isAbsolute } from 'path';
+import { getDb } from './db.js';
 
-function getMemoryDir() {
-  return join(getDataDir(), '.gl-data');
-}
-
-function getMemoryFile() {
-  return join(getMemoryDir(), 'attachment-folder-memory.json');
-}
+/**
+ * Remembered attachment destinations, in the `folder_memory` table
+ * (tasks/plan.md T21). `attachment-folder-memory.json` is a frozen archive:
+ * imported once at startup, then never read or written again.
+ *
+ * The exported API and its return shapes are unchanged from the JSON version —
+ * `routes/attachments.js` cannot tell the two apart. The functions stay async
+ * for the same reason.
+ */
 
 function normalizeRecipient(recipient) {
   return String(recipient || '').trim().toLowerCase();
@@ -44,42 +44,32 @@ function normalizeDir(dir) {
   return value && isAbsolute(value) ? value : null;
 }
 
-async function readAll() {
-  try {
-    const raw = await readFile(getMemoryFile(), 'utf8');
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { recipients: {} };
-    return {
-      version: parsed.version || 1,
-      recipients: parsed.recipients && typeof parsed.recipients === 'object' && !Array.isArray(parsed.recipients)
-        ? parsed.recipients
-        : {},
-    };
-  } catch (err) {
-    if (err.code === 'ENOENT') return { version: 1, recipients: {} };
-    throw err;
+function getRow(key) {
+  return /** @type {any} */ (getDb().prepare('SELECT * FROM folder_memory WHERE key = ?').get(key));
+}
+
+/** Rebuild the record in the shape the JSON store returned it. */
+function recordFromRow(row) {
+  const record = {};
+  if (row.absolute_path != null) {
+    record.absolutePath = row.absolute_path;
+    record.relativeFolder = row.relative_folder ?? null;
+    record.updatedAt = row.updated_at || null;
   }
-}
-
-async function writeAll(data) {
-  await writeFileAtomic(getMemoryFile(), JSON.stringify({ version: 1, recipients: data.recipients || {} }, null, 2));
-}
-
-const locks = new Map();
-function withLock(key, fn) {
-  const prev = locks.get(key) || Promise.resolve();
-  const next = prev.then(fn, fn);
-  locks.set(key, next.catch(() => {}));
-  return next;
+  if (row.file_dir != null) {
+    record.fileDir = row.file_dir;
+    record.fileDirUpdatedAt = row.file_dir_updated_at || null;
+  }
+  return record;
 }
 
 export async function getRememberedDestinationFolder(recipient, type) {
   const key = buildKey(recipient, type);
   if (!key) return null;
-  const data = await readAll();
-  const record = data.recipients[key];
-  const folder = normalizeFolder(record);
-  return folder ? { ...folder, updatedAt: record.updatedAt || null } : null;
+  const row = getRow(key);
+  if (!row) return null;
+  const folder = normalizeFolder({ absolutePath: row.absolute_path, relativeFolder: row.relative_folder });
+  return folder ? { ...folder, updatedAt: row.updated_at || null } : null;
 }
 
 export async function setRememberedDestinationFolder(recipient, folder, type) {
@@ -87,42 +77,42 @@ export async function setRememberedDestinationFolder(recipient, folder, type) {
   if (!key) throw new Error('recipient is required');
   const normalized = normalizeFolder(folder);
   if (!normalized) throw new Error('absolutePath must be an absolute path');
-  return withLock('attachment-folder-memory', async () => {
-    const data = await readAll();
-    data.recipients[key] = {
-      ...data.recipients[key],
-      ...normalized,
-      updatedAt: new Date().toISOString(),
-    };
-    await writeAll(data);
-    return data.recipients[key];
-  });
+  getDb().prepare(`
+    INSERT INTO folder_memory (key, absolute_path, relative_folder, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      absolute_path   = excluded.absolute_path,
+      relative_folder = excluded.relative_folder,
+      updated_at      = excluded.updated_at
+  `).run(key, normalized.absolutePath, normalized.relativeFolder, new Date().toISOString());
+  return recordFromRow(getRow(key));
 }
 
 export async function clearRememberedDestinationFolder(recipient, type) {
   const key = buildKey(recipient, type);
   if (!key) return { ok: true };
-  return withLock('attachment-folder-memory', async () => {
-    const data = await readAll();
-    const record = data.recipients[key];
-    if (record) {
-      // Drop only the folder fields; keep any remembered file directory.
-      const { absolutePath, relativeFolder, updatedAt, ...rest } = record;
-      if (Object.keys(rest).length > 0) data.recipients[key] = rest;
-      else delete data.recipients[key];
-      await writeAll(data);
+  const row = getRow(key);
+  if (row) {
+    // Drop only the folder fields; keep any remembered file directory.
+    if (row.file_dir != null) {
+      getDb().prepare(`
+        UPDATE folder_memory
+        SET absolute_path = NULL, relative_folder = NULL, updated_at = NULL
+        WHERE key = ?
+      `).run(key);
+    } else {
+      getDb().prepare('DELETE FROM folder_memory WHERE key = ?').run(key);
     }
-    return { ok: true };
-  });
+  }
+  return { ok: true };
 }
 
 export async function getRememberedFileDirectory(recipient, type) {
   const key = buildKey(recipient, type);
   if (!key) return null;
-  const data = await readAll();
-  const record = data.recipients[key];
-  const fileDir = normalizeDir(record?.fileDir);
-  return fileDir ? { absolutePath: fileDir, updatedAt: record.fileDirUpdatedAt || null } : null;
+  const row = getRow(key);
+  const fileDir = normalizeDir(row?.file_dir);
+  return fileDir ? { absolutePath: fileDir, updatedAt: row.file_dir_updated_at || null } : null;
 }
 
 export async function setRememberedFileDirectory(recipient, absolutePath, type) {
@@ -130,16 +120,15 @@ export async function setRememberedFileDirectory(recipient, absolutePath, type) 
   if (!key) throw new Error('recipient is required');
   const fileDir = normalizeDir(absolutePath);
   if (!fileDir) throw new Error('absolutePath must be an absolute path');
-  return withLock('attachment-folder-memory', async () => {
-    const data = await readAll();
-    data.recipients[key] = {
-      ...data.recipients[key],
-      fileDir,
-      fileDirUpdatedAt: new Date().toISOString(),
-    };
-    await writeAll(data);
-    return { absolutePath: fileDir, updatedAt: data.recipients[key].fileDirUpdatedAt };
-  });
+  const now = new Date().toISOString();
+  getDb().prepare(`
+    INSERT INTO folder_memory (key, file_dir, file_dir_updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      file_dir            = excluded.file_dir,
+      file_dir_updated_at = excluded.file_dir_updated_at
+  `).run(key, fileDir, now);
+  return { absolutePath: fileDir, updatedAt: now };
 }
 
 export const __test = { normalizeFolder, normalizeRecipient, normalizeDir, buildKey };

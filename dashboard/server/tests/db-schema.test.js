@@ -50,7 +50,7 @@ function insertTransaction(db, overrides = {}) {
 
 test('the migration creates every table and index the store needs', async () => {
   await withDb((db) => {
-    assert.equal(getSchemaVersion(db), 3);
+    assert.equal(getSchemaVersion(db), 4);
 
     // 002 adds the seed for the derived Balance.
     const yearColumns = db.prepare('PRAGMA table_info(year_meta)').all().map((c) => c.name);
@@ -60,10 +60,14 @@ test('the migration creates every table and index the store needs', async () => 
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     ).all().map((r) => r.name);
     assert.deepEqual(tables, [
+      'audit_log',
       'budget_entries',
       'budget_meta',
       'budget_overrides',
+      'cf_budget_map',
       'file_state',
+      'folder_memory',
+      'invoice_attachments',
       'schema_version',
       'transaction_attachments',
       'transaction_checks',
@@ -76,6 +80,7 @@ test('the migration creates every table and index the store needs', async () => 
       "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%' ORDER BY name"
     ).all().map((r) => r.name);
     assert.deepEqual(indexes, [
+      'idx_audit_log_ts',
       'idx_budget_entries_transaction',
       'idx_budget_entries_year_scenario',
       'idx_transactions_sheet_position',

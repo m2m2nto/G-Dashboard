@@ -17,6 +17,7 @@ import invoicesRouter from './routes/invoices.js';
 import { ensureBankingFile } from './services/banking.js';
 import { useStore } from './services/txStore.js';
 import { runStartupChecks } from './services/consistencyCheck.js';
+import { importRemainingStores } from './services/import/importRemainingStores.js';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
@@ -53,6 +54,18 @@ app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
   if (process.send) process.send({ type: 'ready', port: PORT });
   if (APP_DIR) console.log(`Serving client from ${resolve(APP_DIR, 'public')}`);
+  // The four non-row-keyed stores (CF Mapping, folder memory, invoice
+  // attachments, audit) are DB-backed under either GL_STORE flag, so their
+  // one-time import from the JSON archives always runs — and first, before
+  // anything can append an audit entry past the empty-table gate.
+  try {
+    const imported = await importRemainingStores();
+    for (const [store, result] of Object.entries(imported)) {
+      if (result.imported > 0) console.log(`Store import: ${store} ${result.imported} record(s) from the JSON archive.`);
+    }
+  } catch (err) {
+    console.error('Remaining-store import failed:', err.message);
+  }
   // Ensure the current year's banking file exists (auto-create from template if needed)
   const currentYear = String(new Date().getFullYear());
   try {
@@ -61,8 +74,8 @@ app.listen(PORT, HOST, async () => {
   } catch (err) {
     console.error(`Failed to create banking file for ${currentYear}:`, err.message);
   }
-  // Only when the store serves reads: under `GL_STORE=json` this must not so
-  // much as create the database file.
+  // The Transaction store import and consistency check stay behind the flag:
+  // under `GL_STORE=json` the workbooks are still the system of record there.
   if (useStore()) {
     try {
       await runStartupChecks();

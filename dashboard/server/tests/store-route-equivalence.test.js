@@ -26,6 +26,7 @@ const { getDb, closeDb } = await import('../services/db.js');
 const { importYearMeta } = await import('../services/import/detectYearLayout.js');
 const { importAllTransactions } = await import('../services/import/importTransactions.js');
 const { importAllSidecars } = await import('../services/import/importSidecars.js');
+const { importCfBudgetMap } = await import('../services/import/importRemainingStores.js');
 const { listByMonth, budgetSummaryCents, getStoreMode, useStore } = await import('../services/txStore.js');
 const { fromCents } = await import('../services/money.js');
 const { default: transactionsRouter } = await import('../routes/transactions.js');
@@ -96,6 +97,7 @@ const db = getDb();
 await importYearMeta(db);
 await importAllTransactions(db);
 await importAllSidecars(db);
+await importCfBudgetMap(db);
 
 const app = express();
 app.use('/api/transactions', transactionsRouter);

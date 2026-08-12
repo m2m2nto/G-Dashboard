@@ -293,3 +293,28 @@ hand-editing turns out to be a real ongoing workflow rather than an occasional o
 the background behind a pending indicator. Rejected: it adds a new user-visible state and a
 new class of failure, where today's synchronous "close Excel and try again" is understood
 and already enforced.
+
+## Addendum — 2026-08-12: the remaining four stores (tasks/plan.md, T19–T25)
+
+The four `.gl-data` stores this ADR left in JSON are now in the database:
+`cf-budget-category-map.json` → `cf_budget_map`, `attachment-folder-memory.json` →
+`folder_memory`, `invoice-attachments-{year}.json` → `invoice_attachments`, and the
+per-day `audit/*.jsonl` files → `audit_log` (migration `004-remaining-stores.sql`).
+
+Unlike the row-keyed six, these cut over directly with no `GL_STORE` gating: they are
+not row-keyed, their service APIs are unchanged, and both flag paths share the same
+services. Each is imported once at startup, gated on its table being empty
+(`services/import/importRemainingStores.js`, called from `index.js` under either
+flag, audit first so no live `appendEntry` can beat the gate). The JSON files stay on
+disk as frozen archives — never read, written, or deleted by code again. The audit
+log is deliberately single-write (DB only): a JSONL dual-write would recreate the
+stale-copy hazard T5/T15 already demonstrated with `budget_entries`.
+
+T19 also closed a write-path gap found during planning: an Override chosen while
+*adding* a transaction was committed through the JSON-only path and never reached
+`budget_overrides`; `addTransactionViaStore` now commits it inside the same write
+transaction.
+
+Deliberately still files: `settings.json` and `gl-project.json` (bootstrap config
+that locates the project and the database — cannot live in the database they locate),
+the `backup/` snapshot ring, and attachment binaries.

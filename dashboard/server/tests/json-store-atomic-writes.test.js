@@ -26,19 +26,10 @@ async function withTempDataDir(fn) {
   }
 }
 
-test('a corrupt invoice-attachments file throws instead of reading as empty', async () => {
-  await withTempDataDir(async (dir) => {
-    const glDir = join(dir, '.gl-data');
-    await mkdir(glDir, { recursive: true });
-    // Simulate a truncated write: valid prefix, cut off mid-object.
-    await writeFile(join(glDir, 'invoice-attachments-2098.json'), '{"G-001/2098": {"path": "/a', 'utf8');
-
-    const { getInvoiceAttachments } = await import('../services/invoiceAttachments.js');
-    await assert.rejects(() => getInvoiceAttachments('2098'), SyntaxError);
-  });
-});
-
-test('a write against a corrupt invoice-attachments file fails without erasing it', async () => {
+test('a corrupt invoice-attachments archive fails the import instead of importing as empty', async () => {
+  // The invariant moved with the store (T22): reads and writes now hit the
+  // `invoice_attachments` table, so the place a corrupt file could silently
+  // erase every link is the one-time import — which must throw, loudly.
   await withTempDataDir(async (dir) => {
     const glDir = join(dir, '.gl-data');
     await mkdir(glDir, { recursive: true });
@@ -46,13 +37,14 @@ test('a write against a corrupt invoice-attachments file fails without erasing i
     const corrupt = '{"G-001/2098": {"path": "/a';
     await writeFile(file, corrupt, 'utf8');
 
-    const { setInvoiceAttachment } = await import('../services/invoiceAttachments.js');
-    await assert.rejects(() => setInvoiceAttachment('2098', 'G-002/2098', '/tmp/b.pdf'), SyntaxError);
-    assert.equal(await readFile(file, 'utf8'), corrupt, 'existing (recoverable) content untouched');
+    const { getDb } = await import('../services/db.js');
+    const { importInvoiceAttachments } = await import('../services/import/importRemainingStores.js');
+    await assert.rejects(() => importInvoiceAttachments(getDb()), SyntaxError);
+    assert.equal(await readFile(file, 'utf8'), corrupt, 'the archive is never touched');
   });
 });
 
-test('a missing invoice-attachments file still reads as no links', async () => {
+test('no archive at all still reads as no links', async () => {
   await withTempDataDir(async () => {
     const { getInvoiceAttachments } = await import('../services/invoiceAttachments.js');
     assert.deepEqual(await getInvoiceAttachments('2098'), {});
@@ -62,16 +54,12 @@ test('a missing invoice-attachments file still reads as no links', async () => {
 test('JSON store writes leave no .tmp debris in .gl-data', async () => {
   await withTempDataDir(async (dir) => {
     const { setBudgetCategoryOverride } = await import('../services/budgetCategoryMap.js');
-    const { updateCfBudgetMapping } = await import('../services/cfBudgetCategoryMap.js');
     const { setTimestamp } = await import('../services/transactionTimestamps.js');
     const { setCheck } = await import('../services/transactionReconciliation.js');
-    const { setInvoiceAttachment } = await import('../services/invoiceAttachments.js');
 
     await setBudgetCategoryOverride('2098', 'APR', 3, 'Consulenze', 10);
-    await updateCfBudgetMapping('C-Consulenze', 'Consulenze', 10);
     await setTimestamp('2098', 'APR', 3);
     await setCheck('2098', 'APR', 3, { checked: true });
-    await setInvoiceAttachment('2098', 'G-001/2098', '/tmp/a.pdf');
 
     const files = await readdir(join(dir, '.gl-data'));
     assert.equal(files.filter((f) => f.endsWith('.tmp')).length, 0, 'no tmp files left behind');

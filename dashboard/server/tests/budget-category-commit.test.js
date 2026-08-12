@@ -26,11 +26,11 @@ async function withTempDataDir(fn) {
 }
 
 async function writeMapping(dir, mapping) {
-  await writeFile(
-    join(dir, '.gl-data', 'cf-budget-category-map.json'),
-    JSON.stringify(mapping, null, 2),
-    'utf8',
-  );
+  // The Mapping lives in cf_budget_map since T23; seed it through the service.
+  const { updateCfBudgetMapping } = await import('../services/cfBudgetCategoryMap.js');
+  for (const [cfCategory, rec] of Object.entries(mapping)) {
+    await updateCfBudgetMapping(cfCategory, rec.budgetCategory, rec.budgetRow);
+  }
 }
 
 async function readOverrideFile(dir, year) {

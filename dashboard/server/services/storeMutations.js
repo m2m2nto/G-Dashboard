@@ -51,6 +51,7 @@ function assertYearWritable(db, year, month) {
  */
 export async function addTransactionViaStore(month, cleaned, year) {
   const file = getBankingFile(year);
+  const cfMap = await loadCfMap();
   return withWriteTransaction(file, async (db) => {
     assertYearWritable(db, year, month);
 
@@ -70,6 +71,9 @@ export async function addTransactionViaStore(month, cleaned, year) {
 
     const result = await addTransaction(month, cleaned, year);
     db.prepare('UPDATE transactions SET excel_row = ? WHERE id = ?').run(result.row, id);
+    if (cleaned.budgetCategory && cleaned.budgetRow != null) {
+      commitBudgetOverride(db, id, cleaned.cashFlow, cleaned.budgetCategory, cleaned.budgetRow, cfMap);
+    }
     return { ...result, id };
   }, { years: String(year) });
 }

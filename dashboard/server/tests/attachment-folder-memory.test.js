@@ -136,3 +136,37 @@ test('setRememberedFileDirectory rejects non-absolute paths', async () => {
     );
   });
 });
+
+test('the JSON archive imports once, and only into an empty table', async () => {
+  await withTempDataDir(async ({ getRememberedDestinationFolder, getRememberedFileDirectory }) => {
+    const { mkdir, writeFile } = await import('fs/promises');
+    const project = await import('../services/project.js');
+    const { getDb } = await import('../services/db.js');
+    const { importFolderMemory } = await import('../services/import/importRemainingStores.js');
+
+    const glData = join(project.getProjectDir(), '.gl-data');
+    await mkdir(glData, { recursive: true });
+    await writeFile(join(glData, 'attachment-folder-memory.json'), JSON.stringify({
+      version: 1,
+      recipients: {
+        'b::acme srl': {
+          absolutePath: '/Volumes/Docs/ACME',
+          relativeFolder: '2026/ACME',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        'beta': { fileDir: '/sorgente', fileDirUpdatedAt: '2026-01-02T00:00:00.000Z' },
+      },
+    }));
+
+    assert.equal((await importFolderMemory(getDb())).imported, 2);
+
+    const folder = await getRememberedDestinationFolder(' ACME SRL ', 'B');
+    assert.equal(folder.absolutePath, '/Volumes/Docs/ACME');
+    assert.equal(folder.relativeFolder, '2026/ACME');
+    const fileDir = await getRememberedFileDirectory('BETA');
+    assert.equal(fileDir.absolutePath, '/sorgente');
+
+    // The gate: a populated table is never re-imported.
+    assert.equal((await importFolderMemory(getDb())).imported, 0);
+  });
+});

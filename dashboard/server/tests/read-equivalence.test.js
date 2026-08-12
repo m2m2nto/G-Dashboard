@@ -33,6 +33,7 @@ const { getDb } = await import('../services/db.js');
 const { importYearMeta, detectYearLayoutFromFile } = await import('../services/import/detectYearLayout.js');
 const { importAllTransactions } = await import('../services/import/importTransactions.js');
 const { importAllSidecars } = await import('../services/import/importSidecars.js');
+const { importCfBudgetMap } = await import('../services/import/importRemainingStores.js');
 const { readMonthViaExcel, readMonthViaStore, compareMonth } = await import('./helpers/readEquivalence.js');
 
 /** GEN and FEB carry data; the other ten months exist but are empty. */
@@ -129,6 +130,7 @@ const db = getDb();
 await importYearMeta(db);
 await importAllTransactions(db);
 await importAllSidecars(db);
+await importCfBudgetMap(db);
 
 test('every field of every row of every Month is identical, and so is the order', async () => {
   const fieldDiffs = [];

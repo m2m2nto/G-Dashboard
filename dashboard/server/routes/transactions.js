@@ -688,23 +688,27 @@ router.post('/:year/:month', async (req, res) => {
   const year = dateYear;
   const month = /** @type {Month} */ (MONTHS[parseInt(dateMonthNum, 10) - 1]);
   try {
-    // Under the store the insert and the sheet write commit together; under the
-    // default this is exactly the call it always was.
+    // Under the store the insert, the sheet write and the Override commit
+    // together; the JSON sidecar writes below belong to the rollback path only —
+    // on the store path the next export would regenerate them from the store,
+    // silently discarding anything written here.
     const result = useStore()
       ? await addTransactionViaStore(month, cleaned, year)
       : await addTransaction(month, cleaned, year);
-    // Save per-row Budget Category Override only when it diverges from the Mapping
-    if (cleaned.budgetCategory && cleaned.budgetRow != null) {
-      await commitBudgetCategoryChoice(
-        year,
-        month,
-        result.row,
-        cleaned.cashFlow,
-        cleaned.budgetCategory,
-        cleaned.budgetRow,
-      ).catch(() => {});
+    if (!useStore()) {
+      // Save per-row Budget Category Override only when it diverges from the Mapping
+      if (cleaned.budgetCategory && cleaned.budgetRow != null) {
+        await commitBudgetCategoryChoice(
+          year,
+          month,
+          result.row,
+          cleaned.cashFlow,
+          cleaned.budgetCategory,
+          cleaned.budgetRow,
+        ).catch(() => {});
+      }
+      await setTimestamp(year, month, result.row).catch(() => {});
     }
-    await setTimestamp(year, month, result.row).catch(() => {});
     await syncCashFlow(month, year).catch((err) => console.error('Cash flow sync failed:', err.message));
     appendEntry({ action: 'transaction.add', year, month, details: cleaned }).catch(() => {});
     res.json({ ...result, year, month });

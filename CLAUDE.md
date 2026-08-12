@@ -58,26 +58,29 @@ Layout: `AppLayout` wraps `Sidebar`, `TopBar`, and the content area.
 - Handlers follow `handle*` naming and call API → reload data pattern.
 - Toast notifications use `pushToast(type, text)`.
 
-### Persistence — Two Storage Patterns
+### Persistence — SQLite System of Record, Excel Projection
 
 | Storage | What | Where |
 |---------|------|-------|
-| **Excel files** | Transactions, cash flow, budget, invoice sheets | Configured via project manifest, read/written by the Excel services below |
-| **JSON files** | Budget entries, mappings, attachments, audit log | `.gl-data/` directory inside the project folder |
+| **SQLite** (`gl.db`) | Transactions + all sidecar data, budget entries, CF↔Budget mapping, folder memory, invoice attachments, audit log | `.gl-data/gl.db` (ADR-0001; movable via Settings, see `databaseLocation.js`). WAL mode — `gl.db`, `-wal` and `-shm` move/backup together |
+| **Excel files** | Transactions, cash flow, budget, invoice sheets — the *projection* the store writes through | Configured via project manifest, read/written by the Excel services below |
+| **JSON files** | Rollback exports + frozen archives (below) | `.gl-data/` directory inside the project folder |
 
-JSON files in `.gl-data/`:
-- `cf-budget-category-map.json` — CF↔Budget category mapping, global
-- `attachment-folder-memory.json` — remembered destination folder per recipient
-- `transaction-budget-map-{year}.json` — legacy per-transaction budget mappings
-- `budget-entries-{year}.json` — budget entry records
-- `transaction-timestamps-{year}.json` — per-transaction created/updated stamps
-- `transaction-attachments-{year}.json` — transaction → attached file links
-- `transaction-reconciliation-{year}.json` — bank-statement reconciliation checks
-- `transaction-invoices-{year}.json` — transaction → settled invoice (number + its own
-  year, since a payment may settle a previous year's invoice)
-- `invoice-attachments-{year}.json` — invoice number → attached file links
-- `audit/{year}/{month}/{day}.jsonl` — activity log
+JSON files in `.gl-data/` — none is the system of record anymore:
+- **Regenerated exports** (rollback for the `GL_STORE` soak; rewritten from the
+  store after every mutation by `services/export/jsonStoreExport.js`):
+  `transaction-budget-map-{year}.json`, `budget-entries-{year}.json`,
+  `transaction-timestamps-{year}.json`, `transaction-attachments-{year}.json`,
+  `transaction-reconciliation-{year}.json`, `transaction-invoices-{year}.json`
+- **Frozen archives** (one-time-imported at startup by
+  `services/import/importRemainingStores.js`, then never read or written):
+  `cf-budget-category-map.json`, `attachment-folder-memory.json`,
+  `invoice-attachments-{year}.json`, `audit/{year}/{month}/{day}.jsonl`
 - `backup/` — pre-write `.xlsx` snapshots (see `services/atomicWrite.js`)
+
+`GL_STORE=json` sends the six row-keyed stores down the legacy JSON path
+(rollback during the soak); the four frozen-archive stores are DB-backed under
+either flag.
 
 **Row-keyed stores.** Six of these are keyed by Excel row number
 (`budgetCategoryMap`, `transactionTimestamps`, `transactionAttachments`,

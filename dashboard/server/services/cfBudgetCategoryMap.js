@@ -1,51 +1,41 @@
 // @ts-check
-import { readFile } from 'fs/promises';
-import { join } from 'path';
-import { getDataDir } from '../config.js';
-import { writeFileAtomic } from './atomicWrite.js';
+import { getDb } from './db.js';
 
-function getMapDir() {
-  return join(getDataDir(), '.gl-data');
-}
-
-function getMapFile() {
-  return join(getMapDir(), 'cf-budget-category-map.json');
-}
+/**
+ * The global CF->Budget mapping, in the `cf_budget_map` table (tasks/plan.md
+ * T23). `cf-budget-category-map.json` is a frozen archive: imported once at
+ * startup, then never read or written again.
+ *
+ * The exported API and the map shape — `{ [cfCategory]: { budgetCategory,
+ * budgetRow } }`, `budgetRow` absent when the mapping never had one — are
+ * unchanged from the JSON version, so the resolver, the sync services and the
+ * metadata route cannot tell the two apart.
+ */
 
 export async function readCfBudgetMap() {
-  try {
-    const raw = await readFile(getMapFile(), 'utf8');
-    return JSON.parse(raw);
-  } catch (err) {
-    if (err.code === 'ENOENT') return {};
-    throw err;
+  const rows = /** @type {any[]} */ (
+    getDb().prepare('SELECT cf_category, budget_category, budget_row FROM cf_budget_map').all()
+  );
+  /** @type {Record<string, any>} */
+  const map = {};
+  for (const r of rows) {
+    map[r.cf_category] = r.budget_row != null
+      ? { budgetCategory: r.budget_category, budgetRow: r.budget_row }
+      : { budgetCategory: r.budget_category };
   }
+  return map;
 }
 
-async function writeMap(map) {
-  await writeFileAtomic(getMapFile(), JSON.stringify(map, null, 2));
+export async function updateCfBudgetMapping(cfCategory, budgetCategory, budgetRow) {
+  getDb().prepare(`
+    INSERT INTO cf_budget_map (cf_category, budget_category, budget_row)
+    VALUES (?, ?, ?)
+    ON CONFLICT(cf_category) DO UPDATE SET
+      budget_category = excluded.budget_category,
+      budget_row      = excluded.budget_row
+  `).run(cfCategory, budgetCategory, budgetRow ?? null);
 }
 
-// File-level mutex to prevent concurrent writes
-let lock = Promise.resolve();
-function withLock(fn) {
-  const next = lock.then(fn, fn);
-  lock = next.catch(() => {});
-  return next;
-}
-
-export function updateCfBudgetMapping(cfCategory, budgetCategory, budgetRow) {
-  return withLock(async () => {
-    const map = await readCfBudgetMap();
-    map[cfCategory] = { budgetCategory, budgetRow };
-    await writeMap(map);
-  });
-}
-
-export function deleteCfBudgetMapping(cfCategory) {
-  return withLock(async () => {
-    const map = await readCfBudgetMap();
-    delete map[cfCategory];
-    await writeMap(map);
-  });
+export async function deleteCfBudgetMapping(cfCategory) {
+  getDb().prepare('DELETE FROM cf_budget_map WHERE cf_category = ?').run(cfCategory);
 }
