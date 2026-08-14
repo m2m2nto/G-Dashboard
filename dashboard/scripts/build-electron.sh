@@ -51,7 +51,36 @@ echo "--- Running electron-builder ---"
 npx electron-builder --mac
 
 # -------------------------------------------------------------------
-# 5. Clean up staging
+# 5. Prune old release artifacts
+# -------------------------------------------------------------------
+# electron-builder names every artifact after the version, so a build adds four
+# files rather than replacing the previous ones, and nothing ever removed them.
+# That grows by ~290 MB per release; it had reached 1.8 GB of builds going back
+# to February before this step existed.
+#
+# Newest by mtime, not highest version number: rebuilding an older version then
+# has the same predictable effect as building a new one. The unpacked
+# `mac-arm64/` is never touched — it is the build output the release pipeline
+# deploys and zips, and it is overwritten by each build anyway.
+KEEP_BUILDS="${KEEP_BUILDS:-2}"
+OUT_DIR="$DASHBOARD_DIR/dist/electron"
+
+echo ""
+echo "--- Pruning old artifacts (keeping the newest $KEEP_BUILDS) ---"
+# `|| true` because `ls` exits non-zero on no match, and `set -o pipefail`
+# would take the whole build down with it on a first-ever build.
+dmgs="$(ls -t "$OUT_DIR"/*-arm64.dmg 2>/dev/null || true)"
+if [ -n "$dmgs" ]; then
+  echo "$dmgs" | tail -n "+$((KEEP_BUILDS + 1))" | while read -r dmg; do
+    stem="${dmg%-arm64.dmg}"
+    echo "  removing $(basename "$stem")"
+    rm -f "$stem-arm64.dmg" "$stem-arm64.dmg.blockmap" \
+          "$stem-arm64-mac.zip" "$stem-arm64-mac.zip.blockmap"
+  done
+fi
+
+# -------------------------------------------------------------------
+# 6. Clean up staging
 # -------------------------------------------------------------------
 echo ""
 echo "--- Cleaning up ---"
