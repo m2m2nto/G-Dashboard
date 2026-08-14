@@ -1,0 +1,28 @@
+{
+  "name": "gl-dashboard",
+  "version": "2.4.0",
+  "buildNumber": 86,
+  "private": true,
+  "main": "electron/main.cjs",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "test": "npm run typecheck && npm run test --workspace=server && npm run test --workspace=client",
+    "typecheck": "npm run typecheck --workspace=server && npm run typecheck --workspace=client",
+    "electron:dev": "electron .",
+    "electron:build": "bash scripts/build-electron.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}
