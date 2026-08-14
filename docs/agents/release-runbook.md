@@ -7,8 +7,27 @@ Failure modes extracted from the last ~10 release sessions, with detection signa
 ```text
 preflight → test → bump build → electron build → verify .app
          → deploy + verify (project root AND /Applications) → commit
-         → push (GitLab + GitHub) → zip → GitHub release upload
+         → push (GitLab only) → zip → GitHub release upload
 ```
+
+## Remote map — read this before any push
+
+| Remote | URL | What it is | What may be pushed to it |
+|---|---|---|---|
+| `gitlab` | `repository.mobiledatacollection.it/ddaversa/g-dashboard.git` | **private, full history.** `main` tracks this | everything — this is the code remote |
+| `origin` | `github.com/m2m2nto/G-Dashboard.git` | **PUBLIC.** Holds one squashed snapshot and the release assets | **nothing.** No branch, no history, ever |
+| `gitlab-old` | `.../gulliver-lux-dashboard.git` | superseded clone | nothing |
+
+`origin` is the *public* remote despite the conventional name — the private history
+lives on `gitlab`. `main` is ~200 commits ahead of the public snapshot, so
+`git push origin main` publishes the company's full financial history. That happened on
+2026-08-12 (real balances, IBANs, salaries in the audit log) and the history had to be
+replaced. **The release pipeline never pushes to `origin`.** GitHub receives release
+artifacts only, through `gh release create` (phase 11), which needs no push access to
+branches.
+
+There is no `github` remote. Any instruction to "push GitHub" is stale — releases reach
+GitHub through phase 11 alone.
 
 ## Failure → recovery table
 
@@ -16,9 +35,9 @@ preflight → test → bump build → electron build → verify .app
 |---|---|---|---|
 | 1 | `npm install` hangs (>15 min) | no output from the staging install step for minutes | kill it, run `npm cache verify`, retry with `--registry https://registry.npmjs.org/`; if still failing >15 min, abort and surface. Usually a misconfigured or unreachable registry in the local npm config |
 | 2 | Apple Dev cert signing rejected by Gatekeeper | `spctl --assess --type execute G-Dashboard.app` returns "rejected", or app fails to launch with "damaged" error | rebuild with `CSC_IDENTITY_AUTO_DISCOVERY=false` (already default in `build-electron.sh`), then `xattr -cr G-Dashboard.app` to clear quarantine attributes |
-| 3 | Primary `origin` remote unreachable (VPN/network) | `git push origin` exits non-zero with "Could not resolve host", "Connection refused", or "timed out" | retry with exponential backoff: 10s, 30s, 90s (max 3 tries). If still failing, abort the push step and surface clearly — do NOT skip `origin` and continue to a secondary remote |
+| 3 | `gitlab` remote unreachable (VPN/network) | `git push gitlab` exits non-zero with "Could not resolve host", "Connection refused", or "timed out" | retry with exponential backoff: 10s, 30s, 90s (max 3 tries). If still failing, abort the push step and surface clearly. Never "route around" a failing `gitlab` by pushing another remote — see the remote map |
 | 4 | Nested `.app` from `cp -R` | `find G-Dashboard.app -mindepth 1 -maxdepth 3 -name 'G-Dashboard.app' -type d` returns a result. **`-mindepth 1` is load-bearing**: `find` starts at depth 0 with the path itself, so without it the check matches the bundle it was handed and reports nesting on every healthy build — see the note below | `rm -rf G-Dashboard.app`, then use `ditto "$src" "$dst"` (not `cp -R`) |
-| 5 | Divergent remote (main behind/ahead) | `git status -sb` shows `ahead N, behind M` after `git fetch` | `git fetch --all` → if behind only, `git rebase origin/main`; if behind + ahead with conflicts, abort and surface (manual resolution) |
+| 5 | Divergent remote (main behind/ahead) | `git status -sb` shows `ahead N, behind M` after `git fetch` | `git fetch --all` → if behind only, `git rebase gitlab/main`; if behind + ahead with conflicts, abort and surface (manual resolution). Never rebase onto `origin/main` — it is the squashed public snapshot, not this history |
 | 6 | `$N` backreference / unescaped variable in scripts | build script output contains literal `$1`, `$2`, etc., or sed prints raw `&` | scripts must single-quote `sed` patterns and escape `$` in heredocs. Already fixed in `build-electron.sh`; verify by grep before editing scripts |
 | 7 | `onedir`/path layout drift in `electron-builder` output | `dashboard/dist/electron/mac-arm64/G-Dashboard.app` missing after build | `find dashboard/dist/electron -maxdepth 4 -name 'G-Dashboard.app' -type d` to locate; if found elsewhere, copy from the actual path and log a warning so the runbook can be updated |
 | 8 | `npm test` flake (rare) | single test fails on first run, passes on rerun | rerun the failing test file once. If still fails, treat as real failure and abort |
@@ -30,9 +49,15 @@ preflight → test → bump build → electron build → verify .app
 
 1. `git fetch --all --prune` — pull latest refs.
 2. `git status -sb` — confirm clean working tree (no unstaged/uncommitted changes apart from `package.json` if mid-flow). If dirty, abort.
-3. Compare `HEAD` against `origin/main` and `github/main` (if both remotes exist). Rebase if behind.
+3. Compare `HEAD` against `gitlab/main` — that is the branch `main` tracks. Rebase if behind. Ignore `origin/main`; it is the public squashed snapshot and will always look wildly divergent.
 4. `gh auth status` — confirm authenticated.
-5. Probe GitLab reachability with a short-timeout `git ls-remote origin HEAD` (5s timeout). If it fails, surface a warning but proceed through tests/build; only block at the push phase.
+5. Probe GitLab reachability with `git ls-remote --exit-code gitlab HEAD`. If it fails, surface a warning but proceed through tests/build; only block at the push phase.
+
+   Run it bare. **Do not wrap it in `timeout`** — that binary ships with GNU coreutils and is
+   not present on stock macOS, so the wrapper exits 127 and the probe reports UNREACHABLE
+   whatever the network is doing (see the false-signal note at the bottom). Git's own
+   `core.askPass`/credential settings already prevent an indefinite hang on a private host. If
+   you genuinely need a bound, guard it: `command -v gtimeout >/dev/null && gtimeout 5 …`.
 
 ## Verify `.app` structure (after build, before commit)
 
@@ -70,9 +95,12 @@ deploy_app /Applications/G-Dashboard.app
 
 ## Push order
 
-Push `origin` first (required, primary). If the installation also configures a secondary
-releases mirror remote, push it second and never before `origin` succeeded — that keeps the
-remotes aligned. A clone with a single `origin` just pushes once.
+One push, one remote: `git push gitlab main`. Nothing else is pushed, in any phase, for any
+reason. See the remote map above for why `origin` is excluded — it is the public repo, and a
+push there leaks the full private history.
+
+If `gitlab` is unreachable, retry per table row 3 and then abort. A failed `gitlab` push is
+never a reason to try a different remote.
 
 ## Notes
 
@@ -86,4 +114,15 @@ remotes aligned. A clone with a single `origin` just pushes once.
   there. `-mindepth 1` is what makes it a real check. The `deploy_app` guard at line 61
   (`! test -d "$dst/G-Dashboard.app"`) was always correct and is unchanged.
 - Related false signal, same family: a "remote UNREACHABLE" preflight result is usually the probe,
-  not the network. Verify before acting on either.
+  not the network. Verify before acting on either. **Root cause found 2026-08-13, during the
+  build-85 release:** the probe was specified with a "5s timeout", so agents composed
+  `timeout 5 git ls-remote …`; `timeout` does not exist on macOS, the shell returned 127, and the
+  `||` branch printed UNREACHABLE on every run — while `git fetch gitlab` in the same command had
+  just succeeded. Preflight step 5 now says to run the probe bare. Same shape as the `-mindepth 1`
+  bug: a detector that cannot report success, wired to a costly recovery.
+- **The remote names in this file were wrong until 2026-08-13** — it called `origin` the private
+  primary and told the pipeline to push it first. In this clone `origin` is the *public* GitHub
+  repo. An agent following the old text literally would have published ~200 commits of private
+  financial history, re-creating the 2026-08-12 exposure. The build-85 release stopped at preflight
+  only because the agent cross-checked `git remote -v` against the prose instead of trusting it.
+  If these two ever disagree again, `git remote -v` wins and the doc is the bug.

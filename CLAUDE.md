@@ -17,7 +17,11 @@ All commands run from `dashboard/` — see that workspace's `package.json` scrip
 No linter is configured.
 
 ## Release Workflow
-When the user says 'commit', 'ship', or 'release', always run the FULL workflow: run tests → commit → push to all configured remotes → build → upload .app → create GitHub release. Do not stop at commit.
+When the user says 'commit', 'ship', or 'release', always run the FULL workflow: run tests → commit → push to `gitlab` → build → upload .app → create GitHub release. Do not stop at commit.
+
+**Push `gitlab` only — never "all configured remotes".** `origin` is the PUBLIC GitHub repo
+(squashed snapshot + release assets); pushing it leaks the private history. See the remote map
+in `docs/agents/release-runbook.md`.
 
 ## Version & Build Management
 
