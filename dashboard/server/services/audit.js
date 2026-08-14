@@ -1,6 +1,6 @@
 // @ts-check
 import { getDb } from './db.js';
-import { getActiveUser } from './project.js';
+import { getActiveUser } from './users.js';
 
 /**
  * Activity log, in the `audit_log` table (tasks/plan.md T24). The per-day

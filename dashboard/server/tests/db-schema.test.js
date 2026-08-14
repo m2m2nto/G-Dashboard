@@ -50,7 +50,7 @@ function insertTransaction(db, overrides = {}) {
 
 test('the migration creates every table and index the store needs', async () => {
   await withDb((db) => {
-    assert.equal(getSchemaVersion(db), 4);
+    assert.equal(getSchemaVersion(db), 5);
 
     // 002 adds the seed for the derived Balance.
     const yearColumns = db.prepare('PRAGMA table_info(year_meta)').all().map((c) => c.name);
@@ -73,6 +73,7 @@ test('the migration creates every table and index the store needs', async () => 
       'transaction_checks',
       'transaction_invoice_links',
       'transactions',
+      'users',
       'year_meta',
     ]);
 
@@ -86,6 +87,7 @@ test('the migration creates every table and index the store needs', async () => 
       'idx_transactions_sheet_position',
       'idx_transactions_year_cash_flow',
       'idx_transactions_year_order',
+      'idx_users_single_active',
     ]);
 
     // Balance is derived, never stored (ADR §5).

@@ -9,7 +9,6 @@ const DATA_DIR_NAME = '.gl-data';
 // In-memory state
 let _projectDir = null;
 let _manifest = null;
-let _activeUser = null;
 
 export function getProjectDir() {
   return _projectDir;
@@ -156,7 +155,6 @@ export function openProject(dir) {
   }
 
   _manifest = manifest;
-  _activeUser = manifest.activeUser || null;
   updateSettings({ lastProjectDir: dir });
   return manifest;
 }
@@ -208,51 +206,14 @@ export function createProjectV2(dir, { cashFlowFile, transactionFiles }) {
   return manifest;
 }
 
-export function getUsers() {
-  return _manifest?.users || [];
-}
-
-export function addUser(name) {
-  if (!_manifest) throw new Error('No project open');
-  if (!name || typeof name !== 'string') throw new Error('User name is required');
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error('User name is required');
-  if (!_manifest.users) _manifest.users = [];
-  if (_manifest.users.includes(trimmed)) throw new Error('User already exists');
-  _manifest.users.push(trimmed);
-  // Auto-select the new user if none is active
-  if (!_activeUser) {
-    _activeUser = trimmed;
-    _manifest.activeUser = trimmed;
-  }
-  writeManifest(_projectDir, _manifest);
-  return _manifest.users;
-}
-
-export function getActiveUser() {
-  return _activeUser;
-}
-
-export function setActiveUser(name) {
-  if (!name) {
-    _activeUser = null;
-  } else {
-    const users = getUsers();
-    if (!users.includes(name)) throw new Error('User not found');
-    _activeUser = name;
-  }
-  // Persist to manifest so the selection survives restarts
-  if (_manifest && _projectDir) {
-    _manifest.activeUser = _activeUser;
-    writeManifest(_projectDir, _manifest);
-  }
-  return _activeUser;
-}
+// Users and the active selection moved to the `users` table on 2026-08-13 —
+// see `services/users.js`. The manifest's `users`/`activeUser` keys are left in
+// place on existing projects as the seed that table reads once, and are no
+// longer written (tasks/todo.md T31).
 
 export function closeProject() {
   _projectDir = null;
   _manifest = null;
-  _activeUser = null;
   // Remove lastProjectDir but keep other settings
   updateSettings({ lastProjectDir: undefined });
 }

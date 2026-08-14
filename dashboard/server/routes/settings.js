@@ -15,11 +15,8 @@ import {
   isValidProject,
   manifestVersion,
   getManifest,
-  getUsers,
-  addUser,
-  getActiveUser,
-  setActiveUser,
 } from '../services/project.js';
+import { getUsers, addUser, getActiveUser, setActiveUser } from '../services/users.js';
 import { detectFilesInDir, detectFileType, buildProposal } from '../services/detect.js';
 import { getSettings, updateSettings } from '../services/settings.js';
 import { escapeForOsascript } from '../services/osascript.js';
@@ -31,6 +28,7 @@ import {
   resetDatabaseDir,
 } from '../services/databaseLocation.js';
 import { closeDb, getDb } from '../services/db.js';
+import { describeArchiveImport, importRemainingStores } from '../services/import/importRemainingStores.js';
 
 const router = Router();
 
@@ -354,6 +352,32 @@ router.delete('/database', (_req, res) => {
   }
   if (result.ok === false) return res.status(400).json({ error: result.error });
   res.json({ ...databaseInfo(), moved: result.moved });
+});
+
+// ---- Legacy JSON archive import (TEMPORARY) ----
+// The one-time JSON→SQLite backfill, moved off the boot path on 2026-08-13.
+// Deliberately not audit-logged: `importAuditLog` is gated on `audit_log` being
+// empty, so logging the import would be the write that stops the next one from
+// ever restoring a history. Removed together with
+// `services/import/importRemainingStores.js` (tasks/todo.md T30).
+
+router.get('/legacy-import', async (_req, res) => {
+  if (!hasProject()) return res.status(400).json({ error: 'No project is open' });
+  try {
+    res.json({ stores: await describeArchiveImport(getDb()) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/legacy-import', async (_req, res) => {
+  if (!hasProject()) return res.status(400).json({ error: 'No project is open' });
+  try {
+    const results = await importRemainingStores();
+    res.json({ results, stores: await describeArchiveImport(getDb()) });
+  } catch (err) {
+    res.status(500).json({ error: `Import failed: ${err.message}` });
+  }
 });
 
 router.post('/reset', (req, res) => {

@@ -303,10 +303,18 @@ per-day `audit/*.jsonl` files → `audit_log` (migration `004-remaining-stores.s
 
 Unlike the row-keyed six, these cut over directly with no `GL_STORE` gating: they are
 not row-keyed, their service APIs are unchanged, and both flag paths share the same
-services. Each is imported once at startup, gated on its table being empty
-(`services/import/importRemainingStores.js`, called from `index.js` under either
-flag, audit first so no live `appendEntry` can beat the gate). The JSON files stay on
-disk as frozen archives — never read, written, or deleted by code again. The audit
+services. Each is imported once, gated on its table being empty
+(`services/import/importRemainingStores.js`, audit first so no live `appendEntry` can
+beat the gate). The JSON files stay on disk as frozen archives — never read, written,
+or deleted by code again.
+
+That import ran from `index.js` on every boot under either flag, behind a gate that
+held `/api/*` until it finished. Since 2026-08-13 it runs only from
+Settings → Legacy Import: both data directories in existence were verified migrated
+(all four tables populated, counts equal to their archives), leaving the boot path
+with nothing to do. The cost of the move is that an un-migrated `.gl-data` no longer
+repairs itself on open — it comes up empty-but-plausible instead. Both the button and
+the module are meant to be deleted (T30). The audit
 log is deliberately single-write (DB only): a JSONL dual-write would recreate the
 stale-copy hazard T5/T15 already demonstrated with `budget_entries`.
 

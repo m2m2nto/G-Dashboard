@@ -8,14 +8,16 @@ import { buildSettingsSections, resolveActiveSection } from '../src/components/s
 const ids = (sections) => sections.map((s) => s.id);
 const badgeOf = (sections, id) => sections.find((s) => s.id === id).badge;
 
+// `legacy` is the temporary Legacy Import pane — drop it from these lists when
+// the feature goes (tasks/todo.md T30).
 test('v2 offers project, attachments, cash flow, budget, transactions and database', () => {
   const sections = buildSettingsSections({ isV2: true });
-  assert.deepEqual(ids(sections), ['project', 'attachments', 'cashflow', 'budget', 'transactions', 'database']);
+  assert.deepEqual(ids(sections), ['project', 'attachments', 'cashflow', 'budget', 'transactions', 'database', 'legacy']);
 });
 
 test('v1 offers the same panes without budget', () => {
   const sections = buildSettingsSections({ isV2: false });
-  assert.deepEqual(ids(sections), ['project', 'attachments', 'cashflow', 'transactions', 'database']);
+  assert.deepEqual(ids(sections), ['project', 'attachments', 'cashflow', 'transactions', 'database', 'legacy']);
 });
 
 test('no badges when every file checks out', () => {
@@ -24,7 +26,7 @@ test('no badges when every file checks out', () => {
     fileStatus: { attachmentRoot: true, cashFlowFile: true, budgetFile: true },
     txFileStatus: { 2025: true, 2026: true },
   });
-  assert.deepEqual(sections.map((s) => s.badge), [null, null, null, null, null, null]);
+  assert.deepEqual(sections.map((s) => s.badge), [null, null, null, null, null, null, null]);
 });
 
 test('a missing file badges its pane as an error', () => {

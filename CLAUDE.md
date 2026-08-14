@@ -70,7 +70,7 @@ Layout: `AppLayout` wraps `Sidebar`, `TopBar`, and the content area.
 
 | Storage | What | Where |
 |---------|------|-------|
-| **SQLite** (`gl.db`) | Transactions + all sidecar data, budget entries, CF↔Budget mapping, folder memory, invoice attachments, audit log | `.gl-data/gl.db` (ADR-0001; movable via Settings, see `databaseLocation.js`). WAL mode — `gl.db`, `-wal` and `-shm` move/backup together |
+| **SQLite** (`gl.db`) | Transactions + all sidecar data, budget entries, CF↔Budget mapping, folder memory, invoice attachments, audit log, users | `.gl-data/gl.db` (ADR-0001; movable via Settings, see `databaseLocation.js`). WAL mode — `gl.db`, `-wal` and `-shm` move/backup together |
 | **Excel files** | Transactions, cash flow, budget, invoice sheets — the *projection* the store writes through | Configured via project manifest, read/written by the Excel services below |
 | **JSON files** | Rollback exports + frozen archives (below) | `.gl-data/` directory inside the project folder |
 
@@ -80,8 +80,9 @@ JSON files in `.gl-data/` — none is the system of record anymore:
   `transaction-budget-map-{year}.json`, `budget-entries-{year}.json`,
   `transaction-timestamps-{year}.json`, `transaction-attachments-{year}.json`,
   `transaction-reconciliation-{year}.json`, `transaction-invoices-{year}.json`
-- **Frozen archives** (one-time-imported at startup by
-  `services/import/importRemainingStores.js`, then never read or written):
+- **Frozen archives** (one-time-imported by `services/import/importRemainingStores.js`,
+  then never read or written — on demand from Settings → Legacy Import, *not* at
+  startup; temporary, see T30 in `tasks/todo.md`):
   `cf-budget-category-map.json`, `attachment-folder-memory.json`,
   `invoice-attachments-{year}.json`, `audit/{year}/{month}/{day}.jsonl`
 - `backup/` — pre-write `.xlsx` snapshots (see `services/atomicWrite.js`)

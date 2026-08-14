@@ -3,6 +3,7 @@ import FileSection from './settings/FileSection.jsx';
 import TransactionFilesSection from './settings/TransactionFilesSection.jsx';
 import ProjectFolderSection from './settings/ProjectFolderSection.jsx';
 import DatabaseSection from './settings/DatabaseSection.jsx';
+import LegacyImportSection from './settings/LegacyImportSection.jsx';
 import SettingsActions from './settings/SettingsActions.jsx';
 import SettingsFooter from './settings/SettingsFooter.jsx';
 import { buildSettingsSections, resolveActiveSection } from './settings/settingsSections.js';
@@ -144,6 +145,8 @@ export default function SettingsPanel({ open, onClose, onSaved, onCloseProject }
             {activeSection === 'database' && (
               <DatabaseSection open={open} isElectron={form.isElectron} projectDir={form.projectDir} />
             )}
+
+            {activeSection === 'legacy' && <LegacyImportSection open={open} />}
           </div>
         </div>
 

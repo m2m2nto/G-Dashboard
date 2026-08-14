@@ -95,6 +95,8 @@ export function buildSettingsSections({
   }
 
   sections.push({ id: 'database', label: 'Database', icon: 'database', badge: null });
+  // TEMPORARY — remove with the Legacy Import pane (tasks/todo.md T30).
+  sections.push({ id: 'legacy', label: 'Legacy Import', icon: 'inventory_2', badge: null });
   return sections;
 }
 

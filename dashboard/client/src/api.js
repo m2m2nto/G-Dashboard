@@ -245,6 +245,12 @@ export const setDatabaseLocation = (databaseDir) =>
 export const resetDatabaseLocation = () =>
   request('/settings/database', { method: 'DELETE' });
 
+// TEMPORARY — the one-time JSON→SQLite archive import, no longer run at boot.
+// Goes away with the Legacy Import pane (tasks/todo.md T30).
+export const getLegacyImport = () => request('/settings/legacy-import');
+
+export const runLegacyImport = () => postJson('/settings/legacy-import', {});
+
 export const checkProject = (dir) =>
   postJson('/settings/check-project', { dir });
 

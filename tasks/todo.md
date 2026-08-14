@@ -21,4 +21,20 @@
 - [ ] T27: Remove `GL_STORE` flag + JSON branches in routes
 - [ ] T28: Delete JSON sidecar services + shift wiring + retired tests (split per store)
 - [ ] T29: Remove `export/jsonStoreExport.js`
+- [ ] T30: Remove the frozen-archive import entirely — `services/import/importRemainingStores.js`,
+      the `GET/POST /api/settings/legacy-import` routes, `getLegacyImport`/`runLegacyImport`,
+      the Legacy Import pane (`LegacyImportSection.jsx`, `legacyImport.js`, its `settingsSections`
+      entry and the `legacy` id in `settings-sections.test.js`), and `legacy-archive-import.test.js`
+      / `legacy-import.test.js`. Moved off the boot path to a Settings button on 2026-08-13, when
+      both data directories were verified migrated (dev and OneDrive production: all four tables
+      populated, counts equal to their archives). **Gate:** no `.gl-data` predating v2.2.0 will be
+      opened again. Once removed, such a folder comes up with an empty CF→Budget map, no folder
+      memory, no invoice links and no activity history, silently.
+- [ ] T31: Drop the `users`/`activeUser` seed — the `ensureSeeded` call in `services/users.js` and
+      the two keys in every `gl-project.json`. Users moved to the `users` table on 2026-08-13
+      (migration `005-users.sql`); the manifest keys are the one-time seed and are no longer
+      written. **Gate:** every project folder in use has been opened once since, so its table is
+      populated. Verify with `SELECT * FROM users` before removing. What remains in the manifest
+      after this is purely static configuration — which Excel files the project holds — which
+      cannot move into the database it describes.
 - [ ] Checkpoint D: tests green + grep for residual `.gl-data/*.json` reads + manual end-to-end pass
