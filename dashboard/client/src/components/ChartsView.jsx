@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
+import QuarterlyVariationTable from './QuarterlyVariationTable.jsx';
 
 function fmt(v) {
   if (v == null) return '-';
@@ -291,6 +292,9 @@ export default function ChartsView({ yearly, yoyQoQ, monthlyData, loading }) {
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* Quarterly QoQ / YoY variation */}
+      <QuarterlyVariationTable qoq={yoyQoQ?.qoq} />
     </div>
   );
 }

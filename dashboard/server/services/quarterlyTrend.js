@@ -19,9 +19,18 @@ export function isQuarterConcluded(year, quarter, now) {
   return QUARTER_END_MONTH[quarter - 1] < now.getMonth() + 1;
 }
 
+/** Metrics carrying QoQ/YoY deltas, in the order the variation table shows them. */
+const METRICS = ['revenue', 'costs', 'margin', 'financing'];
+
+/**
+ * A percentage change only means something against a positive baseline: a zero
+ * baseline divides by zero, and a negative one — a loss-making quarter's margin,
+ * a financing repayment — flips the sign of the ratio, so -10k → +5k would read
+ * as a rise of +150%. The absolute delta carries the meaning in those cases.
+ */
 function pctChange(current, previous) {
-  if (previous == null) return null;
-  return previous !== 0 ? (current - previous) / Math.abs(previous) : null;
+  if (previous == null || previous <= 0) return null;
+  return (current - previous) / previous;
 }
 
 function diff(current, previous) {
@@ -36,13 +45,13 @@ function diff(current, previous) {
  * @param {Date} now
  */
 export function buildQoQSeries(yearlyTotals, now) {
-  /** @type {Array<{year: number, quarter: number, revenue: number, costs: number, financing: number}>} */
+  /** @type {Array<{year: number, quarter: number, revenue: number, costs: number, financing: number, margin: number}>} */
   const concluded = [];
   for (const { year, quarters } of [...yearlyTotals].sort((a, b) => a.year - b.year)) {
     quarters.forEach((totals, i) => {
       const quarter = i + 1;
       if (!isQuarterConcluded(year, quarter, now)) return;
-      concluded.push({ year, quarter, ...totals });
+      concluded.push({ year, quarter, ...totals, margin: totals.revenue - totals.costs });
     });
   }
 
@@ -51,19 +60,23 @@ export function buildQoQSeries(yearlyTotals, now) {
   return concluded.map((q, i) => {
     const prevQuarter = i > 0 ? concluded[i - 1] : null;
     const prevYear = byKey.get(`${q.year - 1}-${q.quarter}`) ?? null;
-    return {
+
+    const row = {
       quarter: `Q${q.quarter}-${q.year}`,
       revenue: q.revenue,
       costs: q.costs,
       financing: q.financing,
-      qoqRevenueChange: diff(q.revenue, prevQuarter?.revenue ?? null),
-      qoqRevenueChangePct: pctChange(q.revenue, prevQuarter?.revenue ?? null),
-      yoyRevenueChange: diff(q.revenue, prevYear?.revenue ?? null),
-      yoyRevenueChangePct: pctChange(q.revenue, prevYear?.revenue ?? null),
-      qoqCostsChange: diff(q.costs, prevQuarter?.costs ?? null),
-      qoqCostsChangePct: pctChange(q.costs, prevQuarter?.costs ?? null),
-      yoyCostsChange: diff(q.costs, prevYear?.costs ?? null),
-      yoyCostsChangePct: pctChange(q.costs, prevYear?.costs ?? null),
+      margin: q.margin,
     };
+
+    for (const metric of METRICS) {
+      const suffix = metric[0].toUpperCase() + metric.slice(1);
+      for (const [prefix, prev] of [['qoq', prevQuarter], ['yoy', prevYear]]) {
+        const previous = prev ? prev[metric] ?? null : null;
+        row[`${prefix}${suffix}Change`] = diff(q[metric], previous);
+        row[`${prefix}${suffix}ChangePct`] = pctChange(q[metric], previous);
+      }
+    }
+    return row;
   });
 }

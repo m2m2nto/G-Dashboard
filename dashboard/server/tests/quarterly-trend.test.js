@@ -72,6 +72,55 @@ test('buildQoQSeries — QoQ and YoY deltas compare against the right baselines'
   assert.equal(first.yoyRevenueChange, null, 'and no prior-year quarter in the series');
 });
 
+test('buildQoQSeries — margin is emitted per quarter as revenue minus costs', () => {
+  const series = buildQoQSeries(
+    [year(2025, q(500, 200), q(300, 400), q(0, 0), q(0, 0))],
+    new Date(2026, 7, 16)
+  );
+
+  assert.equal(series[0].margin, 300);
+  assert.equal(series[1].margin, -100, 'a loss-making quarter keeps its negative margin');
+});
+
+test('buildQoQSeries — margin and financing carry QoQ and YoY deltas', () => {
+  const series = buildQoQSeries(
+    [
+      year(2025, q(500, 200, 100), q(0, 0, 0), q(0, 0, 0), q(0, 0, 0)),
+      year(2026, q(800, 300, 250), q(0, 0, 0), q(0, 0, 0), q(0, 0, 0)),
+    ],
+    new Date(2026, 7, 16)
+  );
+
+  const q1_2026 = series.find((r) => r.quarter === 'Q1-2026');
+  assert.equal(q1_2026.yoyMarginChange, 500 - 300, 'margin 500 this year vs 300 last year');
+  assert.equal(q1_2026.yoyMarginChangePct, (500 - 300) / 300);
+  assert.equal(q1_2026.yoyFinancingChange, 250 - 100);
+  assert.equal(q1_2026.yoyFinancingChangePct, (250 - 100) / 100);
+});
+
+test('buildQoQSeries — a negative baseline yields a null percentage but keeps the absolute delta', () => {
+  // Q1 margin is -50; Q2 margin is +100. Dividing by |−50| would report a rise
+  // of +300%, which reads as growth off a loss. Only the euro delta is honest.
+  const series = buildQoQSeries(
+    [year(2025, q(100, 150), q(200, 100), q(0, 0), q(0, 0))],
+    new Date(2026, 7, 16)
+  );
+
+  const q2 = series[1];
+  assert.equal(q2.qoqMarginChange, 100 - -50);
+  assert.equal(q2.qoqMarginChangePct, null);
+});
+
+test('buildQoQSeries — a positive baseline still divides by that baseline', () => {
+  const series = buildQoQSeries(
+    [year(2025, q(400, 80), q(500, 100), q(0, 0), q(0, 0))],
+    new Date(2026, 7, 16)
+  );
+
+  assert.equal(series[1].qoqRevenueChangePct, (500 - 400) / 400);
+  assert.equal(series[1].qoqCostsChangePct, (100 - 80) / 80);
+});
+
 test('buildQoQSeries — a zero baseline yields a null percentage, not Infinity', () => {
   const series = buildQoQSeries(
     [year(2025, q(0, 0), q(500, 100), q(0, 0), q(0, 0))],
