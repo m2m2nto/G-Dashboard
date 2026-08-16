@@ -26,6 +26,7 @@ import {
   xmlSetCell,
 } from './excelHelpers.js';
 import { toCents, fromCents } from './money.js';
+import { buildQoQSeries } from './quarterlyTrend.js';
 import { readTransactions } from './banking.js';
 import { useStore, monthCategoryCents } from './txStore.js';
 
@@ -357,6 +358,30 @@ export async function readYearlySummary() {
 // YoY / QoQ (READ — exceljs)
 // ---------------------------------------------------------------------------
 
+// Sum each year sheet's total rows (16 costs, 26 revenues, 31 financing) over
+// the three month columns of every quarter. B–M are the twelve months.
+function quarterTotalsByYear(wb) {
+  const sumRow = (ws, row, startCol) => {
+    let total = 0;
+    for (let c = startCol; c < startCol + 3; c++) {
+      const v = cellValue(ws.getRow(row).getCell(c));
+      total += Number(v) || 0;
+    }
+    return total;
+  };
+
+  return wb.worksheets
+    .filter((ws) => /^\d{4}$/.test(ws.name))
+    .map((ws) => ({
+      year: Number(ws.name),
+      quarters: [0, 1, 2, 3].map((q) => ({
+        revenue: sumRow(ws, 26, 2 + q * 3),
+        costs: sumRow(ws, 16, 2 + q * 3),
+        financing: sumRow(ws, 31, 2 + q * 3),
+      })),
+    }));
+}
+
 export async function readYoYQoQ() {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(getCashFlowFile());
@@ -389,27 +414,10 @@ export async function readYoYQoQ() {
     });
   }
 
-  // QoQ section: row 8 = headers, rows 9–20 = quarterly data
-  const qoq = [];
-  for (let r = 9; r <= 20; r++) {
-    const row = ws.getRow(r);
-    const quarter = cellValue(row.getCell(1));
-    if (!quarter) continue;
-    qoq.push({
-      quarter: String(quarter),
-      revenue: num(row.getCell(2)),
-      costs: num(row.getCell(3)),
-      financing: num(row.getCell(4)),
-      qoqRevenueChange: num(row.getCell(5)),
-      qoqRevenueChangePct: num(row.getCell(6)),
-      yoyRevenueChange: num(row.getCell(7)),
-      yoyRevenueChangePct: num(row.getCell(8)),
-      qoqCostsChange: num(row.getCell(9)),
-      qoqCostsChangePct: num(row.getCell(10)),
-      yoyCostsChange: num(row.getCell(11)),
-      yoyCostsChangePct: num(row.getCell(12)),
-    });
-  }
+  // QoQ: derived from the per-year sheets rather than read back from the
+  // hand-built rows 9–20, which stop at Q4-2025 and whose cost formulas sum
+  // '<year>'!X16:Z20 — pulling revenue row 20 into the cost total.
+  const qoq = buildQoQSeries(quarterTotalsByYear(wb), new Date());
 
   return { yoy, qoq };
 }
