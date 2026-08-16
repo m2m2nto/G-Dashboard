@@ -1,0 +1,81 @@
+import { SIDEBAR_ITEM, SIDEBAR_ITEM_ACTIVE, SIDEBAR_ITEM_COLLAPSED, SIDEBAR_ITEM_COLLAPSED_ACTIVE, SIDEBAR_ITEM_DISABLED, SIDEBAR_ITEM_COLLAPSED_DISABLED } from '../ui.js';
+import logoPng from '../assets/logo.png';
+
+const NAV_ITEMS = [
+  { id: 'home', label: 'Home', icon: 'dashboard' },
+  { id: 'cashflow', label: 'Cash Flow', icon: 'payments' },
+  { id: 'budget', label: 'Budget', icon: 'account_balance' },
+  { id: 'invoices', label: 'Invoices', icon: 'receipt_long' },
+  { id: 'analytics', label: 'Analytics', icon: 'bar_chart' },
+  { id: 'activity', label: 'Activity', icon: 'history' },
+];
+
+export default function Sidebar({ section, onNavigate, collapsed, onToggle, isElectron, disabledSections = new Set() }) {
+  return (
+    <aside
+      className={`fixed left-0 ${isElectron ? 'top-[38px]' : 'top-0'} bottom-0 z-30 bg-white border-r border-surface-border flex flex-col sidebar-transition ${
+        collapsed ? 'w-[56px]' : 'w-[200px]'
+      }`}
+    >
+      {/* Brand — click to collapse/expand */}
+      <button
+        onClick={onToggle}
+        className={`h-14 flex items-center shrink-0 hover:bg-surface-dim transition-colors ${collapsed ? 'justify-center px-0' : 'px-3'}`}
+        title={collapsed ? 'Expand menu' : 'Collapse menu'}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <img src={logoPng} alt="G" className="w-7 h-7 rounded-md shrink-0" />
+          {!collapsed && (
+            <span className="text-base font-semibold text-on-surface tracking-tight whitespace-nowrap">
+              G-Dashboard
+            </span>
+          )}
+        </div>
+      </button>
+
+      {/* Navigation */}
+      <nav className={`flex-1 py-2 space-y-0.5 overflow-y-auto ${collapsed ? 'px-1' : 'px-2'}`}>
+        {NAV_ITEMS.map((item) => {
+          const isActive = section === item.id;
+          const isDisabled = disabledSections.has(item.id);
+          const cls = isDisabled
+            ? (collapsed ? SIDEBAR_ITEM_COLLAPSED_DISABLED : SIDEBAR_ITEM_DISABLED)
+            : collapsed
+              ? (isActive ? SIDEBAR_ITEM_COLLAPSED_ACTIVE : SIDEBAR_ITEM_COLLAPSED)
+              : (isActive ? SIDEBAR_ITEM_ACTIVE : SIDEBAR_ITEM);
+          const tooltip = isDisabled
+            ? `No ${item.label.toLowerCase()} data for this year`
+            : (collapsed ? item.label : undefined);
+          return (
+            <button
+              key={item.id}
+              onClick={isDisabled ? undefined : () => onNavigate(item.id)}
+              className={cls}
+              title={tooltip}
+            >
+              {isActive && !collapsed && !isDisabled && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-accent" />
+              )}
+              <span className="material-symbols-outlined shrink-0" style={{ fontSize: '20px' }}>
+                {item.icon}
+              </span>
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Bottom pinned */}
+      <div className={`py-2 border-t border-surface-border ${collapsed ? 'px-1' : 'px-2'}`}>
+        <button
+          onClick={() => onNavigate('settings')}
+          className={collapsed ? SIDEBAR_ITEM_COLLAPSED : SIDEBAR_ITEM}
+          title={collapsed ? 'Settings' : undefined}
+        >
+          <span className="material-symbols-outlined shrink-0" style={{ fontSize: '20px' }}>settings</span>
+          {!collapsed && <span className="truncate">Settings</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}

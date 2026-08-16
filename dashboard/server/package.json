@@ -1,0 +1,22 @@
+{
+  "name": "server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "test": "node --test --experimental-test-module-mocks",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.0",
+    "jszip": "^3.10.1",
+    "multer": "^2.1.1",
+    "pdfjs-dist": "^6.0.227",
+    "xlsx-populate": "^1.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

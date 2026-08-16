@@ -1,0 +1,594 @@
+// @ts-check
+import { readFile } from 'fs/promises';
+import { join } from 'path';
+import { getDataDir } from '../config.js';
+import { writeFileAtomic } from './atomicWrite.js';
+
+/** @typedef {import('../types.js').BudgetEntry} BudgetEntry */
+/** @typedef {import('../types.js').BudgetScenario} BudgetScenario */
+import {
+  BUDGET_COST_ROWS,
+  BUDGET_REVENUE_ROWS,
+  BUDGET_SCENARIOS,
+} from '../config.js';
+import { updateBudgetConsuntivoBatch, updateBudgetScenarioBatch, readBudgetScenarioRaw, readBudgetGeneraleConsuntivoRaw } from './budget.js';
+import { assertNotOpenInExcel } from './excelHelpers.js';
+import { getBudgetFile } from '../config.js';
+import { useStore } from './txStore.js';
+import { readEntriesFromStore, writeEntriesToStore } from './storeBudgetEntries.js';
+import { exportYear } from './export/jsonStoreExport.js';
+
+const VALID_PAYMENTS = ['inMonth', '30days', '60days'];
+const PAYMENT_OFFSET = { inMonth: 0, '30days': 1, '60days': 2 };
+const VALID_SCENARIOS = ['consuntivo', ...BUDGET_SCENARIOS]; // consuntivo, certo, possibile, ottimistico
+const MONTHS_PAD = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+
+// Returns the 0-based month index where this entry's amount belongs in the budget grid.
+// If competencyMonth is set, it overrides the date's month (accrual vs cash timing).
+export function effectiveMonth(entry) {
+  if (entry.competencyMonth != null) return entry.competencyMonth;
+  return parseInt(entry.date.slice(5, 7), 10) - 1;
+}
+
+function parseCellKey(key) {
+  const [rowStr, miStr] = key.split('-');
+  return { row: Number(rowStr), mi: Number(miStr) };
+}
+
+function getEntriesDir() {
+  return join(getDataDir(), '.gl-data');
+}
+
+function getEntriesFile(year) {
+  return join(getEntriesDir(), `budget-entries-${year}.json`);
+}
+
+/**
+ * Under the store, `budget_entries` is the system of record and the JSON is an
+ * export. Swapping this one reader (and its writer) migrates every mutation
+ * below — add, update, delete, seed, refresh — without touching their
+ * validation or their Excel sync, because all of them go read → mutate → write.
+ */
+async function readEntriesFile(year) {
+  if (useStore()) return readEntriesFromStore(year);
+  return readEntriesJsonFile(year);
+}
+
+/**
+ * The pre-migration reader, always the JSON file whatever the flag says.
+ *
+ * `getTransactionBudgetMonths` must keep using this: it serves the old read
+ * path, and `read-equivalence.test.js` compares that path against the store. A
+ * reader that quietly followed the flag would have both sides of the harness
+ * reading the store and comparing it with itself — which is exactly the trap
+ * T14 fell into and documented.
+ */
+async function readEntriesJsonFile(year) {
+  const filePath = getEntriesFile(year);
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    const data = JSON.parse(raw);
+    // Ensure seeded field exists
+    if (!data.seeded) data.seeded = { certo: false, possibile: false, ottimistico: false };
+    // Backfill empty categories from sibling entries sharing the same budgetRow
+    const rowToCategory = new Map();
+    for (const e of data.entries) {
+      if (e.category && e.budgetRow != null) rowToCategory.set(e.budgetRow, e.category);
+    }
+    for (const e of data.entries) {
+      if (!e.category && e.budgetRow != null && rowToCategory.has(e.budgetRow)) {
+        e.category = rowToCategory.get(e.budgetRow);
+      }
+    }
+    return data;
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return { seeded: { certo: false, possibile: false, ottimistico: false }, entries: [] };
+    }
+    throw err;
+  }
+}
+
+async function writeEntriesFile(year, data) {
+  if (useStore()) {
+    writeEntriesToStore(year, data);
+    // Refresh the rollback file straight away. The T15 export only fires on
+    // Transaction mutations, so without this a budget entry added today would
+    // be missing from the JSON until someone happened to touch a Transaction.
+    await exportYear(year).catch(() => {});
+    return;
+  }
+  await writeFileAtomic(getEntriesFile(year), JSON.stringify(data, null, 2));
+}
+
+// File-level mutex to prevent concurrent writes
+const locks = new Map();
+function withLock(key, fn) {
+  const prev = locks.get(key) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  locks.set(key, next.catch(() => {}));
+  return next;
+}
+
+function generateId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function validateEntry(entry, year) {
+  if (!entry.date || !/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
+    throw new Error('date is required (YYYY-MM-DD)');
+  }
+  const entryYear = entry.date.slice(0, 4);
+  if (entryYear !== String(year)) {
+    throw new Error(`date year (${entryYear}) does not match budget year (${year})`);
+  }
+  if (!entry.description || !entry.description.trim()) {
+    throw new Error('description is required');
+  }
+  if (!entry.category || !entry.category.trim()) {
+    throw new Error('category is required');
+  }
+  if (entry.budgetRow == null) {
+    throw new Error('budgetRow is required');
+  }
+  const row = Number(entry.budgetRow);
+  const inCosts = row >= BUDGET_COST_ROWS.start && row <= BUDGET_COST_ROWS.end;
+  const inRevenues = row >= BUDGET_REVENUE_ROWS.start && row <= BUDGET_REVENUE_ROWS.end;
+  if (!inCosts && !inRevenues) {
+    throw new Error(`budgetRow ${row} is not in a valid cost or revenue range`);
+  }
+  if (entry.amount == null || !isFinite(entry.amount) || entry.amount === 0) {
+    throw new Error('amount must be a non-zero finite number');
+  }
+  if (entry.payment && !VALID_PAYMENTS.includes(entry.payment)) {
+    throw new Error(`payment must be one of: ${VALID_PAYMENTS.join(', ')}`);
+  }
+  if (entry.scenario && !VALID_SCENARIOS.includes(entry.scenario)) {
+    throw new Error(`scenario must be one of: ${VALID_SCENARIOS.join(', ')}`);
+  }
+  if (entry.competencyMonth != null) {
+    const cm = Number(entry.competencyMonth);
+    if (!Number.isInteger(cm) || cm < 0 || cm > 11) {
+      throw new Error('competencyMonth must be an integer 0–11');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sync: aggregate entries and write to Excel
+// ---------------------------------------------------------------------------
+
+// Compute the Excel cell key(s) an entry maps to: "budgetRow-monthIndex"
+export function entryCellKeys(entry) {
+  const month = effectiveMonth(entry);
+  if (month < 0 || month > 11) return [];
+  const scenario = entry.scenario || 'consuntivo';
+  const result = [{ scenario, key: `${entry.budgetRow}-${month}` }];
+  // Also mark the old offset cell for cleanup (legacy data may exist there)
+  const offset = PAYMENT_OFFSET[entry.payment] || 0;
+  if (offset > 0) {
+    const offsetMonth = month + offset;
+    if (offsetMonth <= 11) {
+      result.push({ scenario, key: `${entry.budgetRow}-${offsetMonth}` });
+    }
+  }
+  return result;
+}
+
+async function syncAllScenarios(year, staleCells = []) {
+  const data = await readEntriesFile(year);
+
+  // Group entries by scenario
+  const byScenario = { consuntivo: [], certo: [], possibile: [], ottimistico: [] };
+  for (const entry of data.entries) {
+    const s = entry.scenario || 'consuntivo';
+    if (byScenario[s]) byScenario[s].push(entry);
+  }
+
+  // Build aggregation for each scenario.
+  // staleCells: cells that may no longer have entries and must be zeroed in Excel
+  // if no remaining entries contribute to them.
+  const buildAggregation = (entries, zeroCells = []) => {
+    const agg = new Map();
+    // Pre-seed potentially stale cells to 0 so they get cleared
+    for (const key of zeroCells) {
+      agg.set(key, 0);
+    }
+    for (const entry of entries) {
+      const month = effectiveMonth(entry);
+      if (month < 0 || month > 11) continue;
+      const key = `${entry.budgetRow}-${month}`;
+      agg.set(key, (agg.get(key) || 0) + entry.amount);
+    }
+    return agg;
+  };
+
+  // Group stale cells by scenario
+  const staleByScenario = { consuntivo: [], certo: [], possibile: [], ottimistico: [] };
+  for (const { scenario, key } of staleCells) {
+    if (staleByScenario[scenario]) staleByScenario[scenario].push(key);
+  }
+  // Clear old offset-based cells: entries with payment offsets may have left
+  // values at baseMonth+offset from before the competenza fix
+  for (const entry of data.entries) {
+    const offset = PAYMENT_OFFSET[entry.payment] || 0;
+    if (offset === 0) continue;
+    const offsetMonth = effectiveMonth(entry) + offset;
+    if (offsetMonth > 11) continue;
+    const s = entry.scenario || 'consuntivo';
+    if (staleByScenario[s]) staleByScenario[s].push(`${entry.budgetRow}-${offsetMonth}`);
+  }
+
+  // Always sync consuntivo
+  await updateBudgetConsuntivoBatch(year, buildAggregation(byScenario.consuntivo, staleByScenario.consuntivo));
+
+  // Only sync seeded scenarios
+  for (const scenario of BUDGET_SCENARIOS) {
+    if (data.seeded[scenario]) {
+      await updateBudgetScenarioBatch(year, scenario, buildAggregation(byScenario[scenario], staleByScenario[scenario]));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Seed: import current Excel values as initial entries
+// ---------------------------------------------------------------------------
+
+export function seedEntries(year, scenario) {
+  if (!BUDGET_SCENARIOS.includes(scenario)) {
+    throw new Error(`Cannot seed scenario "${scenario}". Valid: ${BUDGET_SCENARIOS.join(', ')}`);
+  }
+
+  return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
+    const data = await readEntriesFile(year);
+    if (data.seeded[scenario]) {
+      throw new Error(`Scenario "${scenario}" is already seeded for ${year}`);
+    }
+
+    // Read current values and category names from the scenario sheet
+    const { values: rawValues, categoryNames } = await readBudgetScenarioRaw(year, scenario);
+
+    let count = 0;
+    for (const [key, value] of rawValues) {
+      const { row, mi } = parseCellKey(key);
+      data.entries.push({
+        id: generateId(),
+        scenario,
+        date: `${year}-${MONTHS_PAD[mi]}-01`,
+        description: 'Initial budget value',
+        category: categoryNames.get(row) || '',
+        budgetRow: row,
+        amount: Math.round(value * 100) / 100,
+        payment: 'inMonth',
+        notes: '',
+      });
+      count++;
+    }
+
+    data.seeded[scenario] = true;
+    await writeEntriesFile(year, data);
+    await syncAllScenarios(year);
+    return { count };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Refresh: compare Excel values with current entries, create adjustments
+// ---------------------------------------------------------------------------
+
+export function refreshFromExcel(year, scenario) {
+  const isConsuntivo = scenario === 'consuntivo';
+  if (!isConsuntivo && !BUDGET_SCENARIOS.includes(scenario)) {
+    throw new Error(`Cannot refresh scenario "${scenario}". Valid: consuntivo, ${BUDGET_SCENARIOS.join(', ')}`);
+  }
+
+  return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
+    const data = await readEntriesFile(year);
+    if (!isConsuntivo && !data.seeded[scenario]) {
+      throw new Error(`Scenario "${scenario}" must be seeded before refreshing.`);
+    }
+
+    // Read current Excel values — consuntivo comes from the "generale" sheet
+    const { values: excelValues, categoryNames } = isConsuntivo
+      ? await readBudgetGeneraleConsuntivoRaw(year)
+      : await readBudgetScenarioRaw(year, scenario);
+
+    // Aggregate existing entries per cell key (budgetRow-monthIndex) for this scenario
+    const entryTotals = new Map();
+    for (const entry of data.entries) {
+      if ((entry.scenario || 'consuntivo') !== scenario) continue;
+      const month = effectiveMonth(entry);
+      if (month < 0 || month > 11) continue;
+      const key = `${entry.budgetRow}-${month}`;
+      entryTotals.set(key, (entryTotals.get(key) || 0) + entry.amount);
+    }
+
+    // Compare and create adjustment entries
+    let created = 0;
+    let skipped = 0;
+
+    // Check all cells that exist in Excel
+    for (const [key, excelValue] of excelValues) {
+      const currentTotal = Math.round((entryTotals.get(key) || 0) * 100) / 100;
+      const targetValue = Math.round(excelValue * 100) / 100;
+      const diff = Math.round((targetValue - currentTotal) * 100) / 100;
+
+      if (diff === 0) {
+        skipped++;
+        continue;
+      }
+
+      const { row, mi } = parseCellKey(key);
+
+      data.entries.push({
+        id: generateId(),
+        scenario,
+        date: `${year}-${MONTHS_PAD[mi]}-01`,
+        description: 'Excel adjustment',
+        category: categoryNames.get(row) || '',
+        budgetRow: row,
+        amount: diff,
+        payment: 'inMonth',
+        notes: `Refresh: Excel ${targetValue}, entries ${currentTotal}, adj ${diff > 0 ? '+' : ''}${diff}`,
+        updatedAt: new Date().toISOString(),
+      });
+      created++;
+    }
+
+    // Check cells that have entries but are zero/missing in Excel
+    for (const [key, currentTotal] of entryTotals) {
+      if (excelValues.has(key)) continue; // already handled above
+      const rounded = Math.round(currentTotal * 100) / 100;
+      if (rounded === 0) continue;
+
+      const { row, mi } = parseCellKey(key);
+
+      data.entries.push({
+        id: generateId(),
+        scenario,
+        date: `${year}-${MONTHS_PAD[mi]}-01`,
+        description: 'Excel adjustment',
+        category: categoryNames.get(row) || '',
+        budgetRow: row,
+        amount: -rounded,
+        payment: 'inMonth',
+        notes: `Refresh: Excel 0, entries ${rounded}, adj ${-rounded}`,
+        updatedAt: new Date().toISOString(),
+      });
+      created++;
+    }
+
+    if (created > 0) {
+      await writeEntriesFile(year, data);
+      await syncAllScenarios(year);
+    }
+
+    return { created, skipped };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CRUD
+// ---------------------------------------------------------------------------
+
+function normalizeEntries(data) {
+  // Backfill missing fields on legacy entries
+  for (const e of data.entries) {
+    if (!e.scenario) e.scenario = 'consuntivo';
+    if (!e.payment) e.payment = 'inMonth';
+  }
+  return { entries: data.entries.sort((a, b) => a.date.localeCompare(b.date)), seeded: data.seeded };
+}
+
+export async function listEntries(year) {
+  return normalizeEntries(await readEntriesFile(year));
+}
+
+/**
+ * Always the JSON file, whatever the flag says — the importer's source.
+ *
+ * `importSidecars` populates `budget_entries` *from* this JSON, so it cannot go
+ * through `listEntries`: under the store that reads the table it is about to
+ * fill, and the import silently becomes a no-op.
+ */
+export async function listEntriesFromJson(year) {
+  return normalizeEntries(await readEntriesJsonFile(year));
+}
+
+// Maps each transaction's key (`MONTH-row`) to the budget month (0–11) of its
+// linked entry, honouring competencyMonth over the entry date. Pure helper so
+// it can be tested without touching disk.
+export function transactionBudgetMonthsFromEntries(entries) {
+  const months = {};
+  for (const entry of entries || []) {
+    if (!entry.transactionKey) continue;
+    months[entry.transactionKey] = effectiveMonth(entry);
+  }
+  return months;
+}
+
+export async function getTransactionBudgetMonths(year) {
+  // Deliberately the JSON reader — see `readEntriesJsonFile`. The store path
+  // resolves budget months in `txStore.listByMonth` instead.
+  const data = await readEntriesJsonFile(year);
+  return transactionBudgetMonthsFromEntries(data.entries);
+}
+
+// ---------------------------------------------------------------------------
+// transactionKey maintenance — entries link to transactions by `MONTH-row`,
+// so the keys must be re-mapped whenever banking rows are renumbered, exactly
+// like the timestamp/check/attachment stores. transactionKey never affects
+// budget cell values, so no scenario sync is needed here.
+// ---------------------------------------------------------------------------
+
+/** Unlink the deleted row's entry and shift keys below it down by one. */
+export function shiftEntryKeysOnDelete(year, month, deletedRow) {
+  return withLock(`budget-entries-${year}`, async () => {
+    // Under the store this is not merely unnecessary but wrong: the entry's
+    // link is a `transaction_id` and `transactionKey` is derived from the live
+    // row, so re-keying it here would resolve against rows that have already
+    // shifted. `ON DELETE CASCADE` and the single `excel_row` UPDATE do the job.
+    if (useStore()) return;
+    const data = await readEntriesFile(year);
+    const prefix = `${month}-`;
+    let changed = false;
+    for (const entry of data.entries) {
+      if (!entry.transactionKey || !entry.transactionKey.startsWith(prefix)) continue;
+      const row = parseInt(entry.transactionKey.slice(prefix.length), 10);
+      if (row === deletedRow) {
+        delete entry.transactionKey;
+        changed = true;
+      } else if (row > deletedRow) {
+        entry.transactionKey = `${prefix}${row - 1}`;
+        changed = true;
+      }
+    }
+    if (changed) await writeEntriesFile(year, data);
+  });
+}
+
+/**
+ * Re-key entries after a compact renumbered a month's rows.
+ * @param {Map<number, number>} oldToNewRowMap old row → new row; rows absent
+ *   from the map were blank and removed, so those entries are unlinked.
+ */
+export function shiftEntryKeysOnCompact(year, month, oldToNewRowMap) {
+  return withLock(`budget-entries-${year}`, async () => {
+    // Under the store this is not merely unnecessary but wrong: the entry's
+    // link is a `transaction_id` and `transactionKey` is derived from the live
+    // row, so re-keying it here would resolve against rows that have already
+    // shifted. `ON DELETE CASCADE` and the single `excel_row` UPDATE do the job.
+    if (useStore()) return;
+    const data = await readEntriesFile(year);
+    const prefix = `${month}-`;
+    let changed = false;
+    for (const entry of data.entries) {
+      if (!entry.transactionKey || !entry.transactionKey.startsWith(prefix)) continue;
+      const oldRow = parseInt(entry.transactionKey.slice(prefix.length), 10);
+      const newRow = oldToNewRowMap.get(oldRow);
+      if (newRow == null) {
+        delete entry.transactionKey;
+        changed = true;
+      } else if (newRow !== oldRow) {
+        entry.transactionKey = `${prefix}${newRow}`;
+        changed = true;
+      }
+    }
+    if (changed) await writeEntriesFile(year, data);
+  });
+}
+
+/** Point entries linked to oldKey at newKey (transaction moved within the year). */
+export function retargetEntryKey(year, oldKey, newKey) {
+  return withLock(`budget-entries-${year}`, async () => {
+    // Under the store this is not merely unnecessary but wrong: the entry's
+    // link is a `transaction_id` and `transactionKey` is derived from the live
+    // row, so re-keying it here would resolve against rows that have already
+    // shifted. `ON DELETE CASCADE` and the single `excel_row` UPDATE do the job.
+    if (useStore()) return;
+    const data = await readEntriesFile(year);
+    let changed = false;
+    for (const entry of data.entries) {
+      if (entry.transactionKey === oldKey) {
+        entry.transactionKey = newKey;
+        changed = true;
+      }
+    }
+    if (changed) await writeEntriesFile(year, data);
+  });
+}
+
+export function addEntry(year, entry) {
+  return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
+    validateEntry(entry, year);
+    const data = await readEntriesFile(year);
+    const scenario = entry.scenario || 'consuntivo';
+
+    // Prevent adding entries to unseeded scenarios (except consuntivo)
+    if (scenario !== 'consuntivo' && !data.seeded[scenario]) {
+      throw new Error(`Scenario "${scenario}" must be seeded before adding entries. Import from Excel first.`);
+    }
+
+    const newEntry = {
+      id: generateId(),
+      scenario,
+      date: entry.date,
+      description: entry.description.trim(),
+      category: entry.category,
+      budgetRow: entry.budgetRow,
+      amount: Number(entry.amount),
+      payment: entry.payment || 'inMonth',
+      notes: entry.notes || '',
+      updatedAt: new Date().toISOString(),
+    };
+    if (entry.competencyMonth != null) newEntry.competencyMonth = Number(entry.competencyMonth);
+    if (entry.transactionKey) newEntry.transactionKey = entry.transactionKey;
+    data.entries.push(newEntry);
+    await writeEntriesFile(year, data);
+    await syncAllScenarios(year);
+    return newEntry;
+  });
+}
+
+export function updateEntry(year, id, patch) {
+  return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
+    const data = await readEntriesFile(year);
+    const idx = data.entries.findIndex((e) => e.id === id);
+    if (idx === -1) throw new Error(`Entry ${id} not found`);
+
+    // Capture old cell coords — if row/month/scenario changed, old cell may need zeroing
+    const oldCells = entryCellKeys(data.entries[idx]);
+
+    const merged = { ...data.entries[idx], ...patch };
+    validateEntry(merged, year);
+
+    data.entries[idx] = {
+      ...data.entries[idx],
+      scenario: merged.scenario || 'consuntivo',
+      date: merged.date,
+      description: merged.description.trim(),
+      category: merged.category,
+      budgetRow: merged.budgetRow,
+      amount: Number(merged.amount),
+      payment: merged.payment || 'inMonth',
+      notes: merged.notes || '',
+      updatedAt: new Date().toISOString(),
+    };
+    // Persist or clear competencyMonth
+    if (merged.competencyMonth != null) {
+      data.entries[idx].competencyMonth = Number(merged.competencyMonth);
+    } else {
+      delete data.entries[idx].competencyMonth;
+    }
+
+    await writeEntriesFile(year, data);
+    await syncAllScenarios(year, oldCells);
+    return data.entries[idx];
+  });
+}
+
+export function deleteEntry(year, id) {
+  return withLock(`budget-entries-${year}`, async () => {
+    const budgetFile = getBudgetFile();
+    if (budgetFile) await assertNotOpenInExcel(budgetFile);
+    const data = await readEntriesFile(year);
+    const idx = data.entries.findIndex((e) => e.id === id);
+    if (idx === -1) throw new Error(`Entry ${id} not found`);
+
+    // Capture deleted entry's cell coords so sync can zero them if no other entries remain
+    const staleCells = entryCellKeys(data.entries[idx]);
+
+    data.entries.splice(idx, 1);
+    await writeEntriesFile(year, data);
+    await syncAllScenarios(year, staleCells);
+    return { ok: true };
+  });
+}

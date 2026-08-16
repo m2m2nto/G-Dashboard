@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.electron-staging/
+
+# Test output
+test-results/
+
+# Mac
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+*.iws
+.vscode/
+.pi/
+
+# Environment
+.env*
+
+# Claude Code local settings
+.claude/
+
+# Financial data (sensitive, binary)
+*.xlsx
+Banking transactions/
+
+# Per-installation release/update config (see dashboard/release.config.example.json)
+dashboard/release.config.json
+
+# Local app data
+.gl-data/
+.gulliver-data/
+gl-project.json
+dashboard/server/data/
+
+*.app

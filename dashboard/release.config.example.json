@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy to release.config.json (gitignored) to enable auto-update and scripts/create-release.sh. Without it, the app never checks for updates.",
+  "updateRepoOwner": "your-github-user-or-org",
+  "updateRepoName": "your-releases-repo"
+}
