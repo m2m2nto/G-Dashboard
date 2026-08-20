@@ -20,8 +20,14 @@ No linter is configured.
 When the user says 'commit', 'ship', or 'release', always run the FULL workflow: run tests → commit → push to `gitlab` → build → upload .app → create GitHub release. Do not stop at commit.
 
 **Push `gitlab` only — never "all configured remotes".** `origin` is the PUBLIC GitHub repo
-(squashed snapshot + release assets); pushing it leaks the private history. See the remote map
-in `docs/agents/release-runbook.md`.
+(sanitized replay of the release history + release assets); `git push origin main` publishes
+~200 commits of private financial history. The release workflow never pushes `origin` at all —
+GitHub gets the artifact via `gh release create`.
+
+Updating the public mirror is a **separate, explicitly-requested** operation, not a release
+step: replay the new commits onto `origin/main` and push with a refspec, never bare `main`.
+Procedure and its three mandatory guards are in `docs/agents/release-runbook.md`
+("Public mirror sync"); read them before touching `origin`.
 
 ## Version & Build Management
 
