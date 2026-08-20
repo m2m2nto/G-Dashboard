@@ -72,7 +72,7 @@ export function buildQoQSeries(yearlyTotals, now) {
     for (const metric of METRICS) {
       const suffix = metric[0].toUpperCase() + metric.slice(1);
       for (const [prefix, prev] of [['qoq', prevQuarter], ['yoy', prevYear]]) {
-        const previous = prev ? prev[metric] ?? null : null;
+        const previous = prev?.[metric] ?? null;
         row[`${prefix}${suffix}Change`] = diff(q[metric], previous);
         row[`${prefix}${suffix}ChangePct`] = pctChange(q[metric], previous);
       }

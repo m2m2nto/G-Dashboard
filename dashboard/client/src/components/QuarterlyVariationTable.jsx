@@ -36,20 +36,18 @@ export default function QuarterlyVariationTable({ qoq }) {
               ))}
             </tr>
             <tr className="bg-surface-dim text-on-surface-secondary">
-              {VARIATION_METRICS.flatMap(({ key }) => [
-                <th
-                  key={`${key}-qoq`}
-                  className="px-2 py-1.5 text-right text-xs font-normal border-l border-surface-border w-24"
-                >
-                  QoQ
-                </th>,
-                <th
-                  key={`${key}-yoy`}
-                  className="px-2 py-1.5 text-right text-xs font-normal w-24"
-                >
-                  YoY
-                </th>,
-              ])}
+              {VARIATION_METRICS.flatMap(({ key }) =>
+                ['QoQ', 'YoY'].map((period, i) => (
+                  <th
+                    key={`${key}-${period}`}
+                    className={`px-2 py-1.5 text-right text-xs font-normal w-24 ${
+                      i === 0 ? 'border-l border-surface-border' : ''
+                    }`}
+                  >
+                    {period}
+                  </th>
+                ))
+              )}
             </tr>
           </thead>
           <tbody>
