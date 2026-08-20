@@ -22,14 +22,19 @@ test-results/
 # Environment
 .env*
 
-# Claude Code local settings — everything is local EXCEPT the release-engineer
-# agent definition, which docs/agents/release-runbook.md declares itself the source
-# of truth for. The two must travel together or a fresh clone gets a stale agent.
+# Claude Code local settings — everything is local EXCEPT the release pair:
+# the release-engineer agent definition (docs/agents/release-runbook.md declares
+# itself the source of truth for it) and the /ship command that invokes it. All
+# three must travel together or a fresh clone gets a runbook with no agent, or an
+# agent with no way to launch it.
 # Note the `dir/*` form: git cannot re-include a file whose parent dir is excluded.
 .claude/*
 !.claude/agents/
 .claude/agents/*
 !.claude/agents/release-engineer.md
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/ship.md
 
 # Financial data (sensitive, binary)
 *.xlsx
