@@ -19,6 +19,7 @@ import {
   setAttachment,
   buildDefaultAttachmentRelativePath,
   moveAttachmentFile,
+  resolveAttachmentPathUnderRoot,
 } from './transactionAttachments.js';
 import { getSettings } from './settings.js';
 import { useStore, listByMonth, resolveId } from './txStore.js';
@@ -311,6 +312,7 @@ async function editTransactionViaStore({ year, month, row, cleaned }) {
     : [getBankingFile(year), getBankingFile(dateYear)];
 
   let attachmentMoved = null;
+  let attachmentPlan = null;
   const newRow = await withWriteTransaction(files, async (db) => {
     // Both Years are checked before either sheet is touched: a move into a
     // Year that cannot be written must fail with nothing half-done.
@@ -336,9 +338,15 @@ async function editTransactionViaStore({ year, month, row, cleaned }) {
       commitBudgetOverride(db, id, fullTx.cashFlow, cleaned.budgetCategory, cleaned.budgetRow, cfMap);
     }
 
-    attachmentMoved = await renameAttachmentForMove(db, id, fullTx);
+    attachmentMoved = await renameAttachmentForMove(db, id, attachmentPlan);
     return added.row;
-  }, { years: dateYear === year ? String(year) : [String(year), String(dateYear)] });
+  }, {
+    years: dateYear === year ? String(year) : [String(year), String(dateYear)],
+    rollbackFiles: (db) => {
+      attachmentPlan = planAttachmentRename(db, id, fullTx);
+      return attachmentPlan?.paths || [];
+    },
+  });
 
   await syncCashFlow(month, year).catch((err) => console.error('Cash flow sync (old) failed:', err.message));
   await syncCashFlow(dateMonth, dateYear).catch((err) => console.error('Cash flow sync (new) failed:', err.message));
@@ -368,7 +376,7 @@ async function editTransactionViaStore({ year, month, row, cleaned }) {
  * @param {number} id
  * @param {any} fullTx
  */
-async function renameAttachmentForMove(db, id, fullTx) {
+function planAttachmentRename(db, id, fullTx) {
   const record = /** @type {any} */ (db.prepare(
     'SELECT storage_mode, relative_path, file_name, original_file_name FROM transaction_attachments WHERE transaction_id = ?'
   ).get(id));
@@ -388,6 +396,26 @@ async function renameAttachmentForMove(db, id, fullTx) {
     return null;
   }
   if (!newRel || newRel === record.relative_path) return null;
+
+  return {
+    attachmentRoot,
+    record,
+    newRel,
+    paths: [
+      resolveAttachmentPathUnderRoot(attachmentRoot, record.relative_path),
+      resolveAttachmentPathUnderRoot(attachmentRoot, newRel),
+    ],
+  };
+}
+
+/**
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} id
+ * @param {ReturnType<typeof planAttachmentRename>} plan
+ */
+async function renameAttachmentForMove(db, id, plan) {
+  if (!plan) return null;
+  const { attachmentRoot, record, newRel } = plan;
 
   try {
     await moveAttachmentFile(attachmentRoot, record.relative_path, newRel);

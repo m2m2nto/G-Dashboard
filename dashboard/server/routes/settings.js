@@ -29,6 +29,8 @@ import {
 } from '../services/databaseLocation.js';
 import { closeDb, getDb } from '../services/db.js';
 import { describeArchiveImport, importRemainingStores } from '../services/import/importRemainingStores.js';
+import { recoverPendingWorkbookMutations, waitForPendingWrites } from '../services/writeTransaction.js';
+import { useStore } from '../services/txStore.js';
 
 const router = Router();
 
@@ -192,20 +194,35 @@ router.post('/detect-files', async (req, res) => {
 });
 
 // Open an existing project folder
-router.post('/open-project', (req, res) => {
+router.post('/open-project', async (req, res) => {
   const { dir } = req.body;
   if (!dir) return res.status(400).json({ error: 'dir is required' });
+  const previousProjectDir = getProjectDir();
   try {
+    // In the full server this route holds the exclusive Project access lock.
+    // Finish any write already admitted before switching global Project state.
+    await waitForPendingWrites();
     openProject(dir);
+    if (useStore()) await recoverPendingWorkbookMutations();
     const paths = getFilePaths();
-    res.json({
+    const response = {
       ...paths,
       projectDir: getProjectDir(),
       hasProject: true,
       fileStatus: fileStatus(paths),
       manifestVersion: manifestVersion(getManifest()),
-    });
+    };
+    res.json(response);
   } catch (err) {
+    // Never leave a Project available to other routes after its recovery gate
+    // failed. Restore the prior Project while exclusive access is still held.
+    closeDb();
+    try {
+      if (previousProjectDir && previousProjectDir !== dir) openProject(previousProjectDir);
+      else closeProject();
+    } catch {
+      closeProject();
+    }
     res.status(400).json({ error: err.message });
   }
 });

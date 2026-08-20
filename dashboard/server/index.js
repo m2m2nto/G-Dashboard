@@ -15,14 +15,38 @@ import attachmentsRouter from './routes/attachments.js';
 import reconciliationRouter from './routes/reconciliation.js';
 import invoicesRouter from './routes/invoices.js';
 import { ensureBankingFile } from './services/banking.js';
+import { hasProject } from './config.js';
 import { useStore } from './services/txStore.js';
 import { runStartupChecks } from './services/consistencyCheck.js';
+import { recoverPendingWorkbookMutations } from './services/writeTransaction.js';
+import { acquireProjectAccess } from './services/projectActivation.js';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 app.use(cors({ origin: localCorsOptions }));
 app.use(express.json());
+app.use('/api', async (req, res, next) => {
+  try {
+    const projectChangingRequest = req.method === 'POST' && [
+      '/settings/open-project',
+      '/settings/create-project',
+      '/settings/reset',
+    ].includes(req.path);
+    const release = await acquireProjectAccess({ exclusive: projectChangingRequest });
+    let released = false;
+    const releaseOnce = () => {
+      if (released) return;
+      released = true;
+      release();
+    };
+    res.once('finish', releaseOnce);
+    res.once('close', releaseOnce);
+    next();
+  } catch (err) {
+    res.status(503).json({ error: err.message || 'Project activation failed' });
+  }
+});
 
 // The one-time JSON→SQLite import of the four non-row-keyed stores (CF Mapping,
 // folder memory, invoice attachments, audit) used to run here, holding every
@@ -54,6 +78,20 @@ if (APP_DIR) {
 }
 
 const HOST = getListenHost();
+
+// Recovery must finish before the server binds or signals readiness. SQLite
+// automatically rolls back an interrupted transaction on open; the durable
+// projection journal now brings every Banking file to the same outcome before
+// any route can observe or mutate the Project.
+if (useStore() && hasProject()) {
+  const recovery = await recoverPendingWorkbookMutations();
+  if (recovery.restored || recovery.completed || recovery.discarded) {
+    console.log(
+      `Workbook recovery: ${recovery.restored} restored, ` +
+      `${recovery.completed} committed, ${recovery.discarded} incomplete journal(s) discarded.`,
+    );
+  }
+}
 
 app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);

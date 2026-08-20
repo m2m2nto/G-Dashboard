@@ -7,7 +7,7 @@
 // prevent.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir, rename } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -40,6 +40,15 @@ function insertRow(database, name = 'tx') {
 }
 const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM transactions').get().c;
 
+async function journalDirectories() {
+  try {
+    return await readdir(join(projectDir, '.gl-data', 'write-journal'));
+  } catch (err) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
 test('a projection failure leaves the store byte-identical to its pre-mutation state', async () => {
   const before = countRows();
 
@@ -64,6 +73,12 @@ test('a successful mutation commits, and the queue survives the earlier failure'
   assert.ok(id);
   assert.equal(countRows(), before + 1);
   assert.equal(openTransactionCount(), 0);
+  assert.deepEqual(await journalDirectories(), [], 'the committed filesystem journal was removed');
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS c FROM projection_commits').get().c,
+    0,
+    'the committed projection marker was removed after journal cleanup',
+  );
 });
 
 test('a locked workbook fails with today\'s message and changes nothing', async () => {
@@ -160,24 +175,87 @@ test('the recorded state tracks the file the projection actually produced', asyn
   await withWriteTransaction(workbook, async (database) => insertRow(database, 'next'));
 });
 
-test('a rollback discards the recorded file state too', async () => {
-  const stateBefore = db.prepare('SELECT hash FROM file_state WHERE path = ?').get(workbook).hash;
+test('a rollback restores every workbook touched by a multi-file projection', async () => {
+  const source = join(projectDir, 'source-2094.xlsx');
+  const destination = join(projectDir, 'destination-2095.xlsx');
+  await writeFile(source, 'source-before', 'utf8');
+  await writeFile(destination, 'destination-before', 'utf8');
+  const beforeRows = countRows();
+
+  await assert.rejects(
+    () => withWriteTransaction([source, destination], async (database) => {
+      insertRow(database, 'cross-year-doomed');
+      await writeFile(destination, 'destination-with-duplicate', 'utf8');
+      await writeFile(source, 'source-after-delete', 'utf8');
+      throw new Error('source projection failed after destination write');
+    }),
+    /source projection failed after destination write/,
+  );
+
+  assert.equal(countRows(), beforeRows, 'the store mutation rolled back');
+  assert.equal((await readFile(source, 'utf8')), 'source-before', 'the source workbook was restored');
+  assert.equal(
+    (await readFile(destination, 'utf8')),
+    'destination-before',
+    'the untracked destination duplicate was removed',
+  );
+
+  // Restoration also leaves the coordinator usable without requiring the user
+  // to resolve a false external-modification conflict.
+  await withWriteTransaction([source, destination], async (database) => {
+    insertRow(database, 'cross-year-retry');
+  });
+  assert.equal(countRows(), beforeRows + 1);
+});
+
+test('a deferred foreign-key COMMIT failure restores both projected workbooks', async () => {
+  const source = join(projectDir, 'commit-source-2094.xlsx');
+  const destination = join(projectDir, 'commit-destination-2095.xlsx');
+  await writeFile(source, 'commit-source-before', 'utf8');
+  await writeFile(destination, 'commit-destination-before', 'utf8');
+
+  await assert.rejects(
+    () => withWriteTransaction([source, destination], async (database) => {
+      database.exec('PRAGMA defer_foreign_keys = ON');
+      database.prepare(`
+        INSERT INTO transaction_checks (transaction_id, checked, source)
+        VALUES (999999, 1, 'manual')
+      `).run();
+      await writeFile(destination, 'destination-appended-before-commit', 'utf8');
+      await writeFile(source, 'source-deleted-before-commit', 'utf8');
+    }),
+    /FOREIGN KEY constraint failed/,
+  );
+
+  assert.equal(await readFile(source, 'utf8'), 'commit-source-before');
+  assert.equal(await readFile(destination, 'utf8'), 'commit-destination-before');
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS c FROM transaction_checks WHERE transaction_id = 999999').get().c,
+    0,
+  );
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM projection_commits').get().c, 0);
+});
+
+test('non-workbook rollback files restore an Attachment rename on COMMIT failure', async () => {
+  const oldAttachment = join(projectDir, 'attachments', 'old.pdf');
+  const newAttachment = join(projectDir, 'attachments', 'new.pdf');
+  await mkdir(join(projectDir, 'attachments'), { recursive: true });
+  await writeFile(oldAttachment, 'attachment-bytes', 'utf8');
+
   await assert.rejects(
     () => withWriteTransaction(workbook, async (database) => {
-      insertRow(database, 'doomed-2');
-      await writeFile(workbook, 'half-written', 'utf8');
-      throw new Error('failed after touching the file');
-    }),
-    /failed after touching the file/,
+      database.exec('PRAGMA defer_foreign_keys = ON');
+      database.prepare(`
+        INSERT INTO transaction_checks (transaction_id, checked, source)
+        VALUES (999998, 1, 'manual')
+      `).run();
+      await rename(oldAttachment, newAttachment);
+    }, { rollbackFiles: [oldAttachment, newAttachment] }),
+    /FOREIGN KEY constraint failed/,
   );
-  const stateAfter = db.prepare('SELECT hash FROM file_state WHERE path = ?').get(workbook).hash;
-  assert.equal(stateAfter, stateBefore, 'the recorded state rolled back with the rest');
 
-  // And the file really did change, so the next write is refused rather than
-  // silently overwriting whatever state the failure left behind.
-  const err = await withWriteTransaction(workbook, async (database) => insertRow(database, 'x'))
-    .then(() => null, (e) => e);
-  assert.equal(err?.code, EXTERNAL_MODIFICATION);
+  assert.equal(await readFile(oldAttachment, 'utf8'), 'attachment-bytes');
+  await assert.rejects(() => readFile(newAttachment), /ENOENT/);
 });
 
 test.after(async () => {

@@ -50,7 +50,7 @@ function insertTransaction(db, overrides = {}) {
 
 test('the migration creates every table and index the store needs', async () => {
   await withDb((db) => {
-    assert.equal(getSchemaVersion(db), 5);
+    assert.equal(getSchemaVersion(db), 6);
 
     // 002 adds the seed for the derived Balance.
     const yearColumns = db.prepare('PRAGMA table_info(year_meta)').all().map((c) => c.name);
@@ -68,6 +68,7 @@ test('the migration creates every table and index the store needs', async () => 
       'file_state',
       'folder_memory',
       'invoice_attachments',
+      'projection_commits',
       'schema_version',
       'transaction_attachments',
       'transaction_checks',

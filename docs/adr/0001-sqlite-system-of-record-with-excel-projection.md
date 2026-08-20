@@ -165,9 +165,15 @@ Committing after the projection means a locked file rolls the store back and not
 diverges — the user-visible contract is identical to today's. The reverse order would leave
 the store ahead of Excel for the 100–500 ms an `.xlsx` write takes.
 
-The residual window is real: the Excel write succeeds and then `COMMIT` fails (process
-killed, disk full). Mitigated by a startup consistency check comparing per-month row counts
-and cent sums, which offers a re-import on disagreement.
+The original cutover accepted one residual window: an Excel write could succeed and a later
+projection or `COMMIT` could fail. As of 2026-08-20, `withWriteTransaction` closes that
+window with exact workbook before-images. Catchable failures atomically restore every
+declared workbook before returning the error. The same images are persisted under
+`.gl-data/write-journal/` before `BEGIN`; a `projection_commits` marker written inside the
+SQLite transaction lets startup distinguish an interrupted rollback from a commit whose
+journal cleanup did not finish. Recovery runs before server readiness and restores
+uncommitted journals newest-first. The startup consistency check remains a final detection
+net rather than the primary recovery mechanism.
 
 ### 5. Balance is derived, never stored
 
@@ -262,7 +268,9 @@ errors on purpose.
   overwritten by the next projection. Mitigated by an mtime/hash check that refuses to
   write and surfaces a conflict; not eliminated. Accepting this is the explicit price of
   choosing this option over bidirectional sync.
-- **The dual-write window** described above.
+- **A recovery journal to maintain.** Every mutation briefly stores exact workbook
+  before-images and a SQLite commit marker. Corrupt recovery metadata intentionally blocks
+  the Project from opening rather than guessing which copy is authoritative.
 - **A schema to migrate.** Forward-only migrations with a `schema_version` table.
 - **Legacy Years become visible but immutable** in a store that otherwise looks uniformly
   mutable. `year_meta.writable` makes this data rather than a re-derived check.
