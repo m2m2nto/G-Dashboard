@@ -22,8 +22,14 @@ test-results/
 # Environment
 .env*
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings — everything is local EXCEPT the release-engineer
+# agent definition, which docs/agents/release-runbook.md declares itself the source
+# of truth for. The two must travel together or a fresh clone gets a stale agent.
+# Note the `dir/*` form: git cannot re-include a file whose parent dir is excluded.
+.claude/*
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/release-engineer.md
 
 # Financial data (sensitive, binary)
 *.xlsx
