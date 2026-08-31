@@ -28,6 +28,7 @@ import {
 import { toCents, fromCents } from './money.js';
 import { buildQoQSeries } from './quarterlyTrend.js';
 import { readTransactions } from './banking.js';
+import { withWriteTransaction } from './writeTransaction.js';
 import { useStore, monthCategoryCents } from './txStore.js';
 
 // ---------------------------------------------------------------------------
@@ -182,7 +183,11 @@ export async function createElement(elementName, category, year = defaultBanking
     throw new Error(`Invalid cash flow category: "${category}"`);
   }
   const filePath = getBankingFile(year);
-  return withLock(filePath, async () => {
+  // Elements live in the banking workbook, so this write has to go through the
+  // write transaction like any other: it is what records the new `file_state`.
+  // Without it the next transaction mutation sees a hash the app itself
+  // invalidated and refuses as an external modification.
+  return withWriteTransaction(filePath, async () => withLock(filePath, async () => {
     await assertNotOpenInExcel(filePath);
     await snapshotExcelFile(filePath);
     const wb = await XlsxPopulate.fromFileAsync(filePath);
@@ -207,7 +212,7 @@ export async function createElement(elementName, category, year = defaultBanking
 
     await writeWorkbookAtomic(wb, filePath);
     return { elementName: elementName.trim(), category: category || null, row: targetRow };
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +224,8 @@ export async function updateElementCategory(elementName, newCategory, year = def
     throw new Error(`Invalid cash flow category: "${newCategory}"`);
   }
   const filePath = getBankingFile(year);
-  return withLock(filePath, async () => {
+  // Same as createElement: a banking-workbook write must record `file_state`.
+  return withWriteTransaction(filePath, async () => withLock(filePath, async () => {
     await assertNotOpenInExcel(filePath);
     await snapshotExcelFile(filePath);
     const wb = await XlsxPopulate.fromFileAsync(filePath);
@@ -227,7 +233,7 @@ export async function updateElementCategory(elementName, newCategory, year = def
     const updatedElements = updateElementsSheetCategory(elementsSheet, elementName, newCategory);
     await writeWorkbookAtomic(wb, filePath);
     return { elementName, newCategory, updated: 0, updatedElements };
-  });
+  }));
 }
 
 export function updateElementsSheetCategory(ws, elementName, newCategory) {
