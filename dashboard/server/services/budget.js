@@ -443,6 +443,9 @@ export function updateBudgetConsuntivoBatch(year, aggregation) {
   const formulaRows = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
 
   return withLock(filePath, async () => {
+    // Before the snapshot: a workbook open in Excel must not be written at all,
+    // and a backup of a file we are about to refuse is just noise.
+    await assertNotOpenInExcel(filePath);
     await snapshotExcelFile(filePath);
     const fileBuf = await readFile(filePath);
     const zip = await JSZip.loadAsync(fileBuf);
@@ -501,6 +504,9 @@ export function updateBudgetScenarioBatch(year, scenario, aggregation) {
   const formulaRows = [BUDGET_TOTAL_COSTS_ROW, BUDGET_TOTAL_REVENUES_ROW, BUDGET_MARGIN_ROW];
 
   return withLock(filePath, async () => {
+    // Before the snapshot: a workbook open in Excel must not be written at all,
+    // and a backup of a file we are about to refuse is just noise.
+    await assertNotOpenInExcel(filePath);
     await snapshotExcelFile(filePath);
     const fileBuf = await readFile(filePath);
     const zip = await JSZip.loadAsync(fileBuf);
