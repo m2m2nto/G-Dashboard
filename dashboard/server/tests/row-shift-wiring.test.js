@@ -45,6 +45,7 @@ test.mock.module('../services/banking.js', {
     updateTransaction: async () => ({}),
     deleteTransaction: async () => ({ deleted: true }),
     compactTable: async () => removedByCompact,
+    rebuildWorkbookRows: async () => [],
   },
 });
 test.mock.module('../services/cashflow.js', {

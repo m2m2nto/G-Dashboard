@@ -445,13 +445,17 @@ export async function recordFileState(db, filePath) {
  * @template T
  * @param {string | string[]} files workbook(s) this mutation writes
  * @param {(db: import('node:sqlite').DatabaseSync) => Promise<T>} fn
- * @param {{ years?: string | string[], rollbackFiles?: string[] | ((db: import('node:sqlite').DatabaseSync) => string[] | Promise<string[]>) }} [opts]
+ * @param {{ years?: string | string[], rollbackFiles?: string[] | ((db: import('node:sqlite').DatabaseSync) => string[] | Promise<string[]>), acceptExternalChange?: boolean }} [opts]
  *   `years` refreshes JSON exports after commit. `rollbackFiles` declares
  *   non-workbook filesystem side effects (for example an Attachment rename)
  *   that share the same before-image journal but not `file_state` tracking.
+ *   `acceptExternalChange` skips the external-modification guard: the recovery
+ *   that reprojects the store over a diverged workbook is the one mutation
+ *   whose whole purpose is to overwrite it, so the guard would only deadlock
+ *   it. Nothing else may pass it.
  * @returns {Promise<T>}
  */
-export function withWriteTransaction(files, fn, { years, rollbackFiles = [] } = {}) {
+export function withWriteTransaction(files, fn, { years, rollbackFiles = [], acceptExternalChange = false } = {}) {
   const paths = [...new Set(Array.isArray(files) ? files : [files])];
   const run = async () => {
     if (fatalRecoveryError) {
@@ -467,7 +471,7 @@ export function withWriteTransaction(files, fn, { years, rollbackFiles = [] } = 
     // must not open a transaction at all.
     for (const path of paths) {
       await assertNotOpenInExcel(path);
-      await assertNotModifiedExternally(db, path);
+      if (!acceptExternalChange) await assertNotModifiedExternally(db, path);
     }
 
     const extraPaths = typeof rollbackFiles === 'function'

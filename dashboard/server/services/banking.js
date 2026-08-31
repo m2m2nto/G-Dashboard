@@ -57,6 +57,26 @@ export function applyRowStyles(ws, row, isTotals) {
   }
 }
 
+// Write one transaction into the A–J cells of `row`, styles included.
+// Shared by the append path and the store rebuild so the two can never drift
+// on column order, the date format, or the balance formula.
+function writeTransactionCells(ws, row, data) {
+  if (data.date) {
+    const [y, m, d] = data.date.split('-');
+    ws.cell(`A${row}`).value(`${d}/${m}/${y}`);
+  }
+  if (data.type) ws.cell(`B${row}`).value(data.type);
+  if (data.transaction) ws.cell(`C${row}`).value(data.transaction);
+  if (data.notes) ws.cell(`D${row}`).value(data.notes);
+  if (data.iban) ws.cell(`E${row}`).value(data.iban);
+  if (data.inflow) ws.cell(`F${row}`).value(Number(data.inflow));
+  if (data.outflow) ws.cell(`G${row}`).value(Number(data.outflow));
+  ws.cell(`H${row}`).formula(`SUM(H${row - 1},F${row},-G${row})`);
+  if (data.cashFlow) ws.cell(`I${row}`).value(data.cashFlow);
+  if (data.comments) ws.cell(`J${row}`).value(data.comments);
+  applyRowStyles(ws, row, false);
+}
+
 // Remove only the main-table cells (columns A–J) of row r from sheet XML.
 // The <row> element must NOT be removed wholesale: month sheets also hold the
 // L helper cells and the M:N recap table on the same rows, outside the main
@@ -524,22 +544,7 @@ export async function addTransaction(month, data, year = '2026') {
   }
 
   // Write new transaction data at the old totals position
-  if (data.date) {
-    const [y, m, d] = data.date.split('-');
-    ws.cell(`A${newDataRow}`).value(`${d}/${m}/${y}`);
-  }
-  if (data.type) ws.cell(`B${newDataRow}`).value(data.type);
-  if (data.transaction) ws.cell(`C${newDataRow}`).value(data.transaction);
-  if (data.notes) ws.cell(`D${newDataRow}`).value(data.notes);
-  if (data.iban) ws.cell(`E${newDataRow}`).value(data.iban);
-  if (data.inflow) ws.cell(`F${newDataRow}`).value(Number(data.inflow));
-  if (data.outflow) ws.cell(`G${newDataRow}`).value(Number(data.outflow));
-  ws.cell(`H${newDataRow}`).formula(`SUM(H${newDataRow - 1},F${newDataRow},-G${newDataRow})`);
-  if (data.cashFlow) ws.cell(`I${newDataRow}`).value(data.cashFlow);
-  if (data.comments) ws.cell(`J${newDataRow}`).value(data.comments);
-
-  // Apply money column styles (font colors + accounting number format)
-  applyRowStyles(ws, newDataRow, false);
+  writeTransactionCells(ws, newDataRow, data);
 
   // Widen Elements sheet SUMIF ranges if they no longer cover the new totals row
   extendElementsRangesForMonth(wb.sheet('Elements'), month, newTotalsRow);
@@ -730,6 +735,121 @@ export async function deleteTransaction(month, row, year = '2026') {
   await saveZipAtomic(updatedZip, filePath);
 
   return { row, month };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Banking Transactions (REBUILD — reproject a whole Year from the store)
+// ---------------------------------------------------------------------------
+
+/**
+ * Rewrite every month sheet of `filePath` so it matches `rowsByMonth` exactly.
+ *
+ * The store is the system of record and the workbook is its projection
+ * (ADR-0001). When the two diverge — someone saved the file from Excel — this
+ * is what puts the projection back. Replaying `addTransaction` per row would
+ * reopen and re-zip the workbook once per transaction; this opens once, writes
+ * every month, and saves once.
+ *
+ * Row 2 is never touched: it carries the opening balance, whose formula points
+ * at the previous month's table totals.
+ *
+ * @param {string} filePath
+ * @param {Record<string, TransactionInput[]>} rowsByMonth rows in sheet order
+ * @returns {Promise<{ month: Month, rows: number }[]>}
+ */
+export async function rebuildWorkbookRows(filePath, rowsByMonth) {
+  return withLock(filePath, async () => {
+    await assertNotOpenInExcel(filePath);
+    await snapshotExcelFile(filePath);
+
+    // --- Step 1: read every month's table geometry before any cell moves ---
+    const fileBuf = await readFile(filePath);
+    const zip = await JSZip.loadAsync(fileBuf);
+
+    const plans = [];
+    for (let i = 0; i < MONTHS.length; i++) {
+      const month = MONTHS[i];
+      const tablePath = mainTablePath(i);
+      const tableFile = zip.file(tablePath);
+      if (!tableFile) continue;
+      const tableXml = await tableFile.async('string');
+      const refMatch = tableXml.match(/ref="A1:J(\d+)"/);
+      if (!refMatch) throw new Error(`Could not parse table ref for "${month}"`);
+      const oldTotalsRow = parseInt(refMatch[1], 10);
+      const nameMatch = tableXml.match(/displayName="([^"]+)"/);
+      const rows = rowsByMonth[month] || [];
+      const newLastDataRow = 2 + rows.length;   // data starts at row 3
+      plans.push({
+        month,
+        tablePath,
+        tableName: nameMatch ? nameMatch[1] : 'Table4',
+        oldTotalsRow,
+        oldLastDataRow: oldTotalsRow - 1,
+        newLastDataRow,
+        newTotalsRow: newLastDataRow + 1,
+        rows,
+      });
+    }
+
+    // --- Step 2: cell operations with xlsx-populate ---
+    const wb = await XlsxPopulate.fromFileAsync(filePath);
+    const elementsWs = wb.sheet('Elements');
+    for (const p of plans) {
+      const ws = wb.sheet(p.month);
+      if (!ws) throw new Error(`Sheet "${p.month}" not found`);
+      assertModernLayout(ws, p.month);
+
+      // Clear everything the old table covered — data rows and the totals row
+      // alike — so a shrink leaves no orphaned values behind.
+      const clearTo = Math.max(p.oldTotalsRow, p.newTotalsRow);
+      for (let r = 3; r <= clearTo; r++) {
+        for (let col = 1; col <= 10; col++) ws.cell(r, col).value(undefined);
+      }
+
+      p.rows.forEach((tx, idx) => writeTransactionCells(ws, 3 + idx, tx));
+
+      ws.cell(`A${p.newTotalsRow}`).value('Total');
+      ws.cell(`F${p.newTotalsRow}`).formula(`SUM(F2:F${p.newLastDataRow})`);
+      ws.cell(`G${p.newTotalsRow}`).formula(`SUM(G2:G${p.newLastDataRow})`);
+      ws.cell(`H${p.newTotalsRow}`).formula(
+        `SUM(${p.tableName}[[#Totals],[Inflow]]-${p.tableName}[[#Totals],[Outflow]])`
+      );
+      applyRowStyles(ws, p.newTotalsRow, true);
+
+      extendElementsRangesForMonth(elementsWs, p.month, p.newTotalsRow);
+    }
+
+    // --- Step 3: table XML + sheet XML, then ONE atomic write ---
+    const updatedBuf = await wb.outputAsync();
+    const updatedZip = await JSZip.loadAsync(updatedBuf);
+    for (const p of plans) {
+      let xml = await updatedZip.file(p.tablePath).async('string');
+      // Anchored on the owning element rather than the bare range string: a
+      // grow and a shrink move the table ref and the autoFilter ref past each
+      // other, and a positional replace would then rewrite the wrong one.
+      xml = xml.replace(/(<table[^>]*\sref=")A1:J\d+(")/, `$1A1:J${p.newTotalsRow}$2`);
+      xml = xml.replace(/(<autoFilter\s+ref=")A1:J\d+(")/, `$1A1:J${p.newLastDataRow}$2`);
+      xml = xml.replace(/(<totalsRowFormula>SUM\(F2:F)\d+(\)<\/totalsRowFormula>)/, `$1${p.newLastDataRow}$2`);
+      xml = xml.replace(/(<totalsRowFormula>SUM\(G2:G)\d+(\)<\/totalsRowFormula>)/, `$1${p.newLastDataRow}$2`);
+      updatedZip.file(p.tablePath, xml);
+
+      // Rows the shrunken table no longer covers keep their A–J cells in the
+      // sheet XML; strip them so Excel does not show stale values below Total.
+      if (p.newTotalsRow < p.oldTotalsRow) {
+        const sheetPath = await resolveSheetPathByName(updatedZip, p.month);
+        if (sheetPath) {
+          let sheetXml = await updatedZip.file(sheetPath).async('string');
+          for (let r = p.newTotalsRow + 1; r <= p.oldTotalsRow; r++) {
+            sheetXml = stripMainTableCellsFromRow(sheetXml, r);
+          }
+          updatedZip.file(sheetPath, sheetXml);
+        }
+      }
+    }
+
+    await saveZipAtomic(updatedZip, filePath);
+    return plans.map((p) => ({ month: p.month, rows: p.rows.length }));
   });
 }
 

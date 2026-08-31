@@ -86,6 +86,7 @@ import {
   getUsers,
   addUser as apiAddUser,
   setActiveUser as apiSetActiveUser,
+  rebuildYearFromStore,
 } from './api.js';
 
 const MONTHS = ['GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU', 'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'];
@@ -282,12 +283,20 @@ export default function App() {
   }, [sidebarCollapsed]);
 
   // ── Toast system ──
-  const pushToast = useCallback((type, text) => {
+  const pushToast = useCallback((type, text, { action } = {}) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    setToasts((prev) => [...prev, { id, type, text }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    setToasts((prev) => [...prev, { id, type, text, action }]);
+    // A toast offering a recovery has to wait for the user; only the plain
+    // ones expire on their own.
+    if (!action) {
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 4000);
+    }
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   // ── Setup check ──
@@ -335,6 +344,32 @@ export default function App() {
     }
     if (!silent) setTxLoading(false);
   }, [globalYear, month, pushToast]);
+
+  // ── Workbook conflict recovery ──
+  // The server refuses to write a workbook that changed outside the app, so
+  // the transaction is never silently lost — but the refusal is only useful if
+  // the user is offered the way out. The store is the system of record, so the
+  // resolution is to archive the diverged file and reproject the Year over it.
+  const rebuildWorkbook = useCallback(async () => {
+    try {
+      const result = await rebuildYearFromStore(globalYear);
+      const archived = (result?.archived || '').split('/').pop();
+      pushToast('success', `Workbook rebuilt from app data. Your version was saved as ${archived}.`);
+      await loadTransactions({ silent: true });
+    } catch (err) {
+      pushToast('error', 'Rebuild failed: ' + (err.message || ''));
+    }
+  }, [globalYear, pushToast, loadTransactions]);
+
+  const reportMutationError = useCallback((err, fallback) => {
+    if (err?.code === 'WORKBOOK_MODIFIED_EXTERNALLY') {
+      pushToast('error', err.message, {
+        action: { label: 'Rebuild from app data', onClick: rebuildWorkbook },
+      });
+      return;
+    }
+    pushToast('error', err?.message || fallback);
+  }, [pushToast, rebuildWorkbook]);
 
   // ── Startup attachment verification (background, non-blocking) ──
   const attachmentsVerifiedRef = useRef(false);
@@ -971,7 +1006,7 @@ export default function App() {
       setPendingTx(null);
       pushToast('success', successMessage);
     } catch (err) {
-      pushToast('error', err.message || (isUpdate ? 'Unable to update transaction.' : 'Unable to add transaction.'));
+      reportMutationError(err, isUpdate ? 'Unable to update transaction.' : 'Unable to add transaction.');
     }
     setSubmitting(false);
   };
@@ -1182,12 +1217,25 @@ export default function App() {
                   </span>
                   <span>{t.text}</span>
                 </div>
-                <button
-                  onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
-                  className="text-primary-light hover:text-white text-sm font-medium"
-                >
-                  Dismiss
-                </button>
+                <div className="flex shrink-0 items-center gap-3">
+                  {t.action && (
+                    <button
+                      onClick={() => {
+                        dismissToast(t.id);
+                        t.action.onClick();
+                      }}
+                      className="text-primary-light hover:text-white text-sm font-semibold"
+                    >
+                      {t.action.label}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => dismissToast(t.id)}
+                    className="text-primary-light hover:text-white text-sm font-medium"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             </div>
           ))}

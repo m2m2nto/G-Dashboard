@@ -9,6 +9,8 @@ import { appendEntry } from '../services/audit.js';
 import { bulkResolveForMonth, commitBudgetCategoryChoice } from '../services/budgetCategoryResolver.js';
 import { useStore, listByMonth, budgetSummaryCents } from '../services/txStore.js';
 import { addTransactionViaStore, deleteTransactionViaStore, compactViaStore } from '../services/storeMutations.js';
+import { EXTERNAL_MODIFICATION } from '../services/writeTransaction.js';
+import { rebuildYearFromStore } from '../services/workbookRecovery.js';
 // Sidecar reads/writes keyed by transaction_id. The routes keep their row-based
 // URLs and resolve (year, month, row) -> id here, at the boundary.
 import {
@@ -76,6 +78,16 @@ function handleMulterUpload(req, res, next) {
     }
     return res.status(400).json({ error: err.message || 'Upload failed' });
   });
+}
+
+// A workbook that changed outside the app is a conflict the user can resolve
+// (rebuild from the store), not a server fault — 409, and the code travels so
+// the client can offer the recovery instead of a bare error.
+function sendMutationError(res, err) {
+  if (err?.code === EXTERNAL_MODIFICATION) {
+    return res.status(409).json({ error: err.message, code: EXTERNAL_MODIFICATION });
+  }
+  return res.status(500).json({ error: err.message });
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -233,7 +245,7 @@ router.get('/years', async (_req, res) => {
     const years = await listBankingYears();
     res.json(years);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 
@@ -265,7 +277,7 @@ router.post('/:year/:month/compact', async (req, res) => {
     }
     res.json({ removed, month, year });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 
@@ -303,7 +315,7 @@ router.get('/budget-summary/:year', async (req, res) => {
     );
     res.json(summary);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 
@@ -339,7 +351,7 @@ router.get('/:year/:month', async (req, res) => {
     });
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 
@@ -678,6 +690,23 @@ router.delete('/:year/:month/:row/attachment', async (req, res) => {
   }
 });
 
+// Resolve a workbook conflict: archive the diverged file, then reproject the
+// Year from the store. Declared above POST /:year/:month, which would
+// otherwise match this path with month = "rebuild-from-store".
+router.post('/:year/rebuild-from-store', async (req, res) => {
+  const year = String(req.params.year);
+  if (!/^\d{4}$/.test(year)) {
+    return res.status(400).json({ error: `Invalid year: ${year}` });
+  }
+  try {
+    const result = await rebuildYearFromStore(year);
+    appendEntry({ action: 'workbook.rebuild', year, details: { archived: result.archived } }).catch(() => {});
+    res.json(result);
+  } catch (err) {
+    sendMutationError(res, err);
+  }
+});
+
 router.post('/:year/:month', async (req, res) => {
   const { cleaned, error } = validateTransactionPayload(req.body, { partial: false });
   if (error) {
@@ -713,7 +742,7 @@ router.post('/:year/:month', async (req, res) => {
     appendEntry({ action: 'transaction.add', year, month, details: cleaned }).catch(() => {});
     res.json({ ...result, year, month });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 
@@ -742,7 +771,7 @@ router.put('/:year/:month/:row/checked', async (req, res) => {
     }).catch(() => {});
     res.json({ ok: true, checked });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 
@@ -851,7 +880,7 @@ router.put('/:year/:month/:row', async (req, res) => {
       attachmentMoved: result.attachmentMoved,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 
@@ -880,7 +909,7 @@ router.delete('/:year/:month/:row', async (req, res) => {
     }
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendMutationError(res, err);
   }
 });
 

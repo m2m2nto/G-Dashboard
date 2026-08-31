@@ -34,6 +34,11 @@ export const ACTION_BADGES = {
     color: 'bg-orange-100 text-orange-700',
     help: 'Empty rows were squeezed out of a month sheet.',
   },
+  'workbook.rebuild': {
+    label: 'Workbook Rebuilt',
+    color: 'bg-orange-100 text-orange-700',
+    help: 'A workbook had changed outside the app and was rebuilt from the app data. The changed file was archived.',
+  },
   'transaction.reconcile.apply': {
     label: 'Reconciled',
     color: 'bg-sky-100 text-sky-700',
@@ -177,7 +182,7 @@ export const ACTION_GROUPS = [
   { title: 'Cash Flow', actions: ['cashflow.sync', 'cashflow.sync-all', 'element.category', 'element.create', 'cf-budget-map.update'] },
   { title: 'Budget', actions: ['budget.add', 'budget.update', 'budget.delete', 'budget.seed', 'budget.refresh'] },
   { title: 'Invoices', actions: ['invoice.add', 'invoice.update', 'invoice.delete', 'invoice.attachment.link', 'invoice.attachment.unlink'] },
-  { title: 'System', actions: ['store.consistency', 'store.import'] },
+  { title: 'System', actions: ['store.consistency', 'store.import', 'workbook.rebuild'] },
 ];
 
 export const FALLBACK_BADGE = { color: 'bg-surface-dim text-on-surface-secondary' };
@@ -227,6 +232,8 @@ export function describe(entry) {
       return details?.transaction || `Row ${details?.row}`;
     case 'transaction.compact':
       return `Removed ${plural(details?.removed || 0, 'empty row')}`;
+    case 'workbook.rebuild':
+      return details?.archived ? `Changed file archived as ${String(details.archived).split('/').pop()}` : '';
     case 'transaction.reconcile.apply':
       return `${plural(details?.count || 0, 'row')} reconciled`;
     case 'transaction.invoice.link':

@@ -4,7 +4,12 @@ async function request(url, options) {
   const res = await fetch(BASE + url, options);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+    const error = new Error(err.error || res.statusText);
+    // The server tags recoverable conditions (a workbook changed outside the
+    // app) with a code; callers key their recovery UI off it.
+    if (err.code) error.code = err.code;
+    error.status = res.status;
+    throw error;
   }
   return res.json();
 }
@@ -36,6 +41,11 @@ export const getTransactionBudgetSummary = (year) => request(`/transactions/budg
 
 export const addTransaction = (year, month, data) =>
   postJson(`/transactions/${year}/${month}`, data);
+
+// Resolve a workbook conflict: archive the diverged file, reproject the Year
+// from the store (which is the system of record).
+export const rebuildYearFromStore = (year) =>
+  postJson(`/transactions/${year}/rebuild-from-store`, {});
 
 export const getCashFlow = (year) => request(`/cashflow/${year}`);
 
