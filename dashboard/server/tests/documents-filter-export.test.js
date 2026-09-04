@@ -20,6 +20,11 @@ import JSZip from 'jszip';
 const testRoot = await mkdtemp(join(tmpdir(), 'gd-documents-filter-export-'));
 process.env.GULLIVER_APP_DIR = testRoot;
 process.env.GULLIVER_DATA_DIR = testRoot;
+// GL_STORE is pinned to 'json': these seed the JSON sidecar directly, which the
+// store branch of /search, /recipients and /export bypasses entirely. Their
+// store path is covered by tests/attachment-relocation-store.test.js. Both pins
+// go away at T18, when the JSON path is removed.
+process.env.GL_STORE = 'json';
 
 // Mutable stub state — each describe block sets the banking years its
 // original source file mocked.

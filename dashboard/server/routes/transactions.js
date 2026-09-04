@@ -17,6 +17,7 @@ import {
   setCheckViaStore, getChecksViaStore,
   setInvoiceLinkViaStore, removeInvoiceLinkViaStore, getInvoiceLinksViaStore, getInvoiceLinkViaStore,
   setAttachmentViaStore, removeAttachmentViaStore, getAttachmentsViaStore, getAttachmentViaStore,
+  findAttachmentReferencesViaStore,
 } from '../services/storeSidecars.js';
 import { toCents, fromCents } from '../services/money.js';
 import { unlink, readFile } from 'fs/promises';
@@ -52,6 +53,7 @@ import {
   statusForAttachmentError,
   ATTACHMENT_MAX_BYTES,
 } from '../services/transactionAttachments.js';
+import { relocateAttachmentViaStore } from '../services/relocateAttachment.js';
 import { stat } from 'fs/promises';
 import { getSettings } from '../services/settings.js';
 import { editTransaction } from '../services/editTransaction.js';
@@ -560,7 +562,9 @@ router.post('/:year/:month/:row/attachment/move', async (req, res) => {
       return res.status(400).json({ error: 'Attachment root is not configured' });
     }
 
-    const updated = await relocateAttachment(attachmentRoot, year, month, row, relativePath);
+    const updated = useStore()
+      ? await relocateAttachmentViaStore(attachmentRoot, year, month, row, relativePath)
+      : await relocateAttachment(attachmentRoot, year, month, row, relativePath);
     appendEntry({
       action: 'transaction.attachment.move',
       year,
@@ -634,8 +638,9 @@ async function maybeDeletePhysicalAttachmentFile(record) {
   if (!isExternal && !attachmentRoot) {
     return { fileDeleted: false, warning: 'Attachment root is not configured; link removed only' };
   }
-  const years = await listBankingYears();
-  const references = await findAttachmentReferencesForRecord(years, record, attachmentRoot);
+  const references = useStore()
+    ? findAttachmentReferencesViaStore(record, attachmentRoot)
+    : await findAttachmentReferencesForRecord(await listBankingYears(), record, attachmentRoot);
   if (references.length > 0) {
     return { fileDeleted: false, warning: 'Physical file was not deleted because it is referenced by another attachment' };
   }

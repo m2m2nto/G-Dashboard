@@ -20,7 +20,7 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   '.xlsx',
 ]);
 
-function attachmentError(code, message) {
+export function attachmentError(code, message) {
   const err = /** @type {Error & { code: string }} */ (new Error(message));
   err.code = code;
   return err;

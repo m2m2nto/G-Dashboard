@@ -2,6 +2,7 @@
 import { getDb } from './db.js';
 import { requireId, rowKeysForYear } from './txStore.js';
 import { exportAfterMutation } from './export/jsonStoreExport.js';
+import { resolveAttachmentAbsolutePath } from './transactionAttachments.js';
 
 /**
  * Sidecar reads and writes keyed by `transaction_id` (ADR-0001, T14).
@@ -199,4 +200,44 @@ export function getAttachmentsViaStore(year) {
 /** @param {string} year @param {string} month @param {number} row */
 export function getAttachmentViaStore(year, month, row) {
   return getAttachmentsViaStore(year).attachments[`${month}-${row}`] || null;
+}
+
+/**
+ * Every Attachment record, in any Year, whose file resolves to the same
+ * physical path as `target`. The JSON equivalent reads the `.gl-data` export,
+ * which under the store is a lagging copy written fire-and-forget after each
+ * mutation — a delete that consulted it could still see the record it just
+ * removed and decline to remove the file. Return shape matches
+ * `findAttachmentReferencesForRecord` so callers only pick an implementation.
+ *
+ * @param {any} target @param {string} rootDir attachment root
+ * @returns {{ year: string, key: string, attachment: any }[]}
+ */
+export function findAttachmentReferencesViaStore(target, rootDir) {
+  if (!target) return [];
+  let targetAbs;
+  try {
+    targetAbs = resolveAttachmentAbsolutePath(target, rootDir);
+  } catch {
+    return [];
+  }
+
+  const rows = /** @type {any[]} */ (getDb().prepare(`
+    SELECT a.*, t.year, t.month, t.excel_row FROM transaction_attachments a
+    JOIN transactions t ON t.id = a.transaction_id
+  `).all());
+
+  const matches = [];
+  for (const r of rows) {
+    const attachment = attachmentFromRow(r);
+    let candidateAbs;
+    try {
+      candidateAbs = resolveAttachmentAbsolutePath(attachment, rootDir);
+    } catch {
+      continue;
+    }
+    if (candidateAbs !== targetAbs) continue;
+    matches.push({ year: String(r.year), key: `${r.month}-${r.excel_row}`, attachment });
+  }
+  return matches;
 }

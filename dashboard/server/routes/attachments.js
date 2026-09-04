@@ -10,8 +10,8 @@ import { MONTHS, listBankingYears } from '../config.js';
 import { getSettings } from '../services/settings.js';
 import { appendEntry } from '../services/audit.js';
 import { escapeForOsascript } from '../services/osascript.js';
-import { useStore } from '../services/txStore.js';
-import { setAttachmentViaStore } from '../services/storeSidecars.js';
+import { useStore, listByMonth } from '../services/txStore.js';
+import { setAttachmentViaStore, getAttachmentsViaStore, getAttachmentViaStore } from '../services/storeSidecars.js';
 import { readTransactions } from '../services/banking.js';
 import {
   getAttachments,
@@ -78,6 +78,22 @@ const ATTACHMENT_OSA_TYPES = [
 ];
 
 export { escapeForOsascript };
+
+// The three read helpers below are the store boundary for this file. SQLite is
+// the system of record (ADR-0001); the `.gl-data` JSON files are an export
+// written fire-and-forget after each mutation, so reading them back could show
+// a Year one mutation behind. `GL_STORE=json` keeps the old path for rollback.
+async function readAttachments(year) {
+  return useStore() ? getAttachmentsViaStore(year) : getAttachments(year);
+}
+
+async function readAttachmentRecord(year, month, row) {
+  return useStore() ? getAttachmentViaStore(year, month, row) : getAttachment(year, month, row);
+}
+
+async function readMonthTransactions(month, year) {
+  return useStore() ? listByMonth(year, month) : readTransactions(month, year);
+}
 
 function monthSortValue(month) {
   const index = MONTHS.indexOf(month);
@@ -163,7 +179,7 @@ async function buildTransactionsByKey(year, attachments) {
   }
   const transactionsByKey = {};
   for (const month of months) {
-    const rows = await readTransactions(month, year).catch(() => []);
+    const rows = await readMonthTransactions(month, year).catch(() => []);
     for (const tx of rows) {
       transactionsByKey[`${month}-${tx.row}`] = tx;
     }
@@ -182,7 +198,7 @@ router.get('/search', async (req, res) => {
     const items = [];
 
     for (const year of years) {
-      const data = await getAttachments(year);
+      const data = await readAttachments(year);
       const attachments = data.attachments || {};
       if (Object.keys(attachments).length === 0) continue;
       const transactionsByKey = await buildTransactionsByKey(year, attachments);
@@ -217,7 +233,7 @@ router.get('/recipients', async (req, res) => {
     const yearNum = Number(yearRaw);
     if (!Number.isInteger(yearNum)) return res.status(422).json({ error: 'Invalid year' });
 
-    const data = await getAttachments(yearRaw);
+    const data = await readAttachments(yearRaw);
     const seen = new Map();
     for (const attachment of Object.values(data.attachments || {})) {
       if (!attachment) continue;
@@ -242,7 +258,7 @@ router.post('/verify', async (_req, res) => {
     let updated = 0;
 
     for (const year of years) {
-      const data = await getAttachments(year);
+      const data = await readAttachments(year);
       const keys = Object.keys(data.attachments || {});
       if (keys.length === 0) continue;
 
@@ -397,7 +413,7 @@ router.post('/export', async (req, res) => {
 
       let attachment;
       try {
-        attachment = await getAttachment(year, month, row);
+        attachment = await readAttachmentRecord(year, month, row);
       } catch {
         skipped += 1;
         continue;
