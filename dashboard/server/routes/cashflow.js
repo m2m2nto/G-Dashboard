@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { readCashFlow, syncCashFlow, syncAllCashFlow, listCashFlowYears } from '../services/cashflow.js';
 import { syncBudgetCfCerto } from '../services/budgetCfSync.js';
 import { readTransactions } from '../services/banking.js';
+import { useStore, listByMonth } from '../services/txStore.js';
 import { MONTHS, CATEGORY_TO_CF_ROW } from '../config.js';
 import { appendEntry } from '../services/audit.js';
 
@@ -77,7 +78,9 @@ router.get('/drill/:month/:category', async (req, res) => {
     return res.status(400).json({ error: `Invalid month: ${month}` });
   }
   try {
-    const transactions = await readTransactions(month, year);
+    const transactions = useStore()
+      ? await listByMonth(year, month)
+      : await readTransactions(month, year);
     const filtered = transactions.filter((tx) => tx.cashFlow === category);
     res.json(filtered);
   } catch (err) {

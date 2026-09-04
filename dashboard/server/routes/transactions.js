@@ -66,6 +66,15 @@ const upload = multer({
   limits: { fileSize: ATTACHMENT_MAX_BYTES },
 });
 
+// SQLite is the system of record (ADR-0001); the workbook is its projection.
+// These handlers only need the row to exist and to read a few of its fields,
+// and the sidecar write that follows resolves the same row through the store —
+// so checking the workbook meant validating against a different source than
+// the one being written.
+async function readMonthTransactions(month, year) {
+  return useStore() ? listByMonth(year, month) : readTransactions(month, year);
+}
+
 function sendAttachmentError(res, err, fallbackStatus = 500) {
   const status = statusForAttachmentError(err);
   if (status) return res.status(status).json({ error: err.message });
@@ -369,7 +378,7 @@ router.post('/:year/:month/:row/attachment/upload', handleMulterUpload, async (r
   }
 
   try {
-    const rows = await readTransactions(month, year);
+    const rows = await readMonthTransactions(month, year);
     const tx = rows.find((item) => item.row === row);
     if (!tx) {
       return res.status(404).json({ error: 'Transaction row not found' });
@@ -420,7 +429,7 @@ router.post('/:year/:month/:row/attachment/link', async (req, res) => {
   }
 
   try {
-    const rows = await readTransactions(month, year);
+    const rows = await readMonthTransactions(month, year);
     const tx = rows.find((item) => item.row === row);
     if (!tx) {
       return res.status(404).json({ error: 'Transaction row not found' });
@@ -482,7 +491,7 @@ router.post('/:year/:month/:row/attachment/attach', async (req, res) => {
   }
 
   try {
-    const rows = await readTransactions(month, year);
+    const rows = await readMonthTransactions(month, year);
     const tx = rows.find((item) => item.row === row);
     if (!tx) {
       return res.status(404).json({ error: 'Transaction row not found' });
@@ -761,7 +770,7 @@ router.put('/:year/:month/:row/checked', async (req, res) => {
   const { year, month, row } = parsed;
   const checked = !!req.body?.checked;
   try {
-    const rows = await readTransactions(month, year);
+    const rows = await readMonthTransactions(month, year);
     const tx = rows.find((item) => item.row === row);
     if (!tx) {
       return res.status(404).json({ error: 'Transaction row not found' });
@@ -798,7 +807,7 @@ router.put('/:year/:month/:row/invoice', async (req, res) => {
   const requestedNumber = normalizeString(req.body?.invoiceNumber) || null;
   const requestedYear = normalizeString(req.body?.invoiceYear) || year;
   try {
-    const rows = await readTransactions(month, year);
+    const rows = await readMonthTransactions(month, year);
     const tx = rows.find((item) => item.row === row);
     if (!tx) {
       return res.status(404).json({ error: 'Transaction row not found' });
@@ -896,7 +905,7 @@ router.delete('/:year/:month/:row', async (req, res) => {
   }
   const { year, month, row } = parsed;
   try {
-    const rows = await readTransactions(month, year);
+    const rows = await readMonthTransactions(month, year);
     const before = rows.find((r) => r.row === row);
     let result;
     if (useStore()) {

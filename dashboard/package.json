@@ -1,7 +1,7 @@
 {
   "name": "gl-dashboard",
-  "version": "2.6.1",
-  "buildNumber": 93,
+  "version": "2.6.2",
+  "buildNumber": 94,
   "private": true,
   "main": "electron/main.cjs",
   "workspaces": [
