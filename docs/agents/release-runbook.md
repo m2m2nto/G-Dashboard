@@ -7,7 +7,7 @@ Failure modes extracted from the last ~10 release sessions, with detection signa
 ```text
 preflight → test → bump build → electron build → verify .app
          → deploy + verify (project root AND /Applications) → commit
-         → push (GitLab only) → zip → GitHub release upload
+         → push (GitLab only) → tag (GitLab only) → zip → GitHub release upload
 ```
 
 ## Remote map — read this before any push
@@ -100,12 +100,45 @@ deploy_app /Applications/G-Dashboard.app
 
 ## Push order
 
-One push, one remote: `git push gitlab main`. Nothing else is pushed, in any phase, for any
-reason. See the remote map above for why `origin` is excluded — it is the public repo, and a
-push there leaks the full private history.
+One push target, one remote: `gitlab`. Phase 8 pushes `main`; phase 9 pushes the release
+tag, by name. Nothing is pushed to any other remote, in any phase, for any reason. See the
+remote map above for why `origin` is excluded — it is the public repo, and a push there
+leaks the full private history.
 
 If `gitlab` is unreachable, retry per table row 3 and then abort. A failed `gitlab` push is
 never a reason to try a different remote.
+
+## Release provenance — the tag must name the source that was built
+
+`gh release create` runs against the **public** repo, so the tag it creates points at
+whatever `origin/main` happened to be at that moment. The mirror only moves out-of-band,
+always *after* a release, so that tag names the **previous** release's tree — never the
+source that produced the artifact. Builds 92, 93 and 94 all tagged the same commit, three
+releases behind, and the drift goes back further: the tags for builds 84–94 pointed at five
+different commits, none of them the one that was built.
+
+**The GitHub tag is not provenance and must not be read as such.** Two things make it real,
+and both are release phases:
+
+1. **Tag the private commit on `gitlab` (phase 9)** — annotated, same name as the GitHub
+   release tag, pushed by name:
+
+   ```bash
+   git tag -a "v${VERSION}-build.${BUILD}" -m "G-Dashboard ${VERSION} (build ${BUILD})"
+   git push gitlab "v${VERSION}-build.${BUILD}"   # never --tags, never origin
+   ```
+
+2. **Record the private SHA in the GitHub release body (phase 11)**, so the release page
+   states which source produced its asset.
+
+`remote.origin.tagOpt` is set to `--no-tags` in this clone, so the public repo's tags are
+not fetched and cannot collide with the private ones. A clone cannot hold two commits under
+one tag name; that collision is what broke `git describe` until 2026-09-04.
+
+Do **not** "fix" this by running the mirror sync before `gh release create` so the public
+tag lands on the right tree. The sync is a human-requested, guard-gated operation (below);
+turning it into an implicit release phase is how the 2026-08-12 exposure becomes possible
+again.
 
 ## Public mirror sync — NOT part of the release, never automatic
 
@@ -177,6 +210,15 @@ wrong, so stop and surface.
   `||` branch printed UNREACHABLE on every run — while `git fetch gitlab` in the same command had
   just succeeded. Preflight step 5 now says to run the probe bare. Same shape as the `-mindepth 1`
   bug: a detector that cannot report success, wired to a costly recovery.
+- **Release tags named the wrong source until 2026-09-04.** `gh release create` tags the
+  public repo, whose `main` lags the private history, so every tag pointed at an earlier
+  release's tree — builds 92–94 all landed on the same commit. `gitlab` carried no tags at
+  all, so the repo holding the source had no record of what was built. Fixed by tagging the
+  private commits on `gitlab` (phase 9), setting `remote.origin.tagOpt --no-tags` so the two
+  tag namespaces stop colliding, and recording the private SHA in the release body. The
+  mapping was rebuilt from `buildNumber` in `package.json` history rather than from commit
+  subjects, because the v2.6.1 and v2.6.2 release commits carry `fix(...)` subjects rather
+  than `chore: release ...`.
 - **The remote names in this file were wrong until 2026-08-13** — it called `origin` the private
   primary and told the pipeline to push it first. In this clone `origin` is the *public* GitHub
   repo. An agent following the old text literally would have published ~200 commits of private

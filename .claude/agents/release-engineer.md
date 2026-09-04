@@ -44,13 +44,16 @@ If either file is missing, abort and surface immediately.
 6. deploy + verify — ditto into project root AND /Applications (NOT cp -R); verify exec bit + signature on each
 7. commit          — buildNumber change with conventional message
 8. push GitLab     — gitlab main, with retry/backoff
-9. (no push phase) — GitHub gets artifacts via phase 11 only; never push a branch there
+9. tag GitLab      — annotated v${VERSION}-build.${BUILD} on the release commit, pushed to gitlab by name
 10. zip            — ditto -ck --sequesterRsrc --keepParent
 11. gh release     — gh release create with --latest, repo from dashboard/release.config.json
 ```
 
 After every phase, print a one-line status: `[phase N/11] OK in Ts` or `[phase N/11] FAILED: ...`.
-Phase 9 always prints `[phase 9/11] SKIPPED (policy: no history to public GitHub)`.
+
+Phase 9 used to be a placeholder that always printed SKIPPED. It now carries the private
+release tag — see "Release provenance" in the runbook. GitHub still receives **no branch
+push** in any phase; it gets the artifact through phase 11 alone.
 
 ## Phase details
 
@@ -179,16 +182,28 @@ push_with_retry gitlab || { echo "FAIL: gitlab push exhausted retries"; exit 1; 
 `gitlab` is the only remote this pipeline pushes. If it exhausts its retries, abort — do not
 fall back to another remote.
 
-### 9. No GitHub push — skipped by policy
+### 9. Tag the release commit on GitLab
 
-```text
-[phase 9/11] SKIPPED (policy: no history to public GitHub)
+The tag `gh release create` makes in phase 11 lands on the **public** repo, whose `main`
+lags the private history — so it names an earlier release's tree, not the source that was
+built. This phase is what records provenance. See "Release provenance" in the runbook.
+
+```bash
+git tag -a "$TAG" -m "G-Dashboard ${VERSION} (build ${BUILD})"
+git push gitlab "$TAG"
 ```
 
-There is no branch push to GitHub. `origin` is the public repo and receives release assets
-only, via phase 11. Print the line above and move to phase 10. If a caller asks you to "push
-to GitHub", that is satisfied by the phase 11 release upload; treat any instruction to push a
-branch or history there as out of bounds and surface it rather than complying.
+By name, never `--tags`: that would push every local tag, including any left over from an
+aborted run. `gitlab` only, like phase 8.
+
+If the tag already exists on `gitlab`, a previous run got this far — verify it points at the
+release commit (`git rev-parse "$TAG^{commit}"`) and move on. Do **not** force-move a tag
+that already names a published release.
+
+Still no branch push to GitHub, in this or any phase. `origin` is the public repo and
+receives release assets only, via phase 11. If a caller asks you to "push to GitHub", that is
+satisfied by the phase 11 upload; treat any instruction to push a branch or history there as
+out of bounds and surface it rather than complying.
 
 ### 10. Zip
 
@@ -212,7 +227,9 @@ RELEASE_REPO=$(node -p "const c=require('./dashboard/release.config.json'); c.up
 gh release create "$TAG" "$ZIP" \
   --repo "$RELEASE_REPO" \
   --title "G-Dashboard ${VERSION} (build ${BUILD})" \
-  --notes "G-Dashboard v${VERSION} build ${BUILD}" \
+  --notes "G-Dashboard v${VERSION} build ${BUILD}
+
+Source: gitlab $(git rev-parse HEAD)" \
   --latest
 ```
 
@@ -242,7 +259,7 @@ End the run with a single summary block:
 ```text
 === Release v{version}-build.{N} ===
 preflight  OK Ts | tests OK Ts | build OK Ts | verify OK Ts | deploy OK Ts (root + /Applications)
-commit OK Ts | gitlab OK Ts (R retries) | github SKIPPED (policy) | zip OK Ts | release OK Ts
+commit OK Ts | gitlab OK Ts (R retries) | tag OK Ts | zip OK Ts | release OK Ts
 URL: https://github.com/{RELEASE_REPO}/releases/tag/v{version}-build.{N}
 ```
 
