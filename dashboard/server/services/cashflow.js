@@ -29,7 +29,7 @@ import { toCents, fromCents } from './money.js';
 import { buildQoQSeries } from './quarterlyTrend.js';
 import { readTransactions } from './banking.js';
 import { withWriteTransaction } from './writeTransaction.js';
-import { useStore, monthCategoryCents } from './txStore.js';
+import { useStore, monthCategoryCents, elementTotalsCents } from './txStore.js';
 
 // ---------------------------------------------------------------------------
 // Cash Flow file structural constants
@@ -129,6 +129,15 @@ export async function readElementsDetail(year = defaultBankingYear()) {
     agg[name] = { cost: 0, revenue: 0, catFreq: {} };
   }
 
+  // The Elements sheet above is Excel-native, but these actuals are Transaction
+  // data the store owns (ADR-0001) — reading them from the workbook meant this
+  // view could disagree with every other Transaction read in the app.
+  if (useStore()) {
+    const totals = elementTotalsCents(year);
+    for (const name of elementNames) {
+      if (totals[name]) agg[name] = totals[name];
+    }
+  } else {
   for (const m of MONTHS) {
     let txs;
     try {
@@ -147,6 +156,7 @@ export async function readElementsDetail(year = defaultBankingYear()) {
         entry.catFreq[tx.cashFlow] = (entry.catFreq[tx.cashFlow] || 0) + 1;
       }
     }
+  }
   }
 
   // 3. Build result with most-frequent category and totals (already in cents)

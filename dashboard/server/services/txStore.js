@@ -122,8 +122,9 @@ function amountFromCents(cents) {
 
 // One grouped scan replaces opening and parsing twelve workbooks per request.
 // Grouping by (month, override, category) collapses a Year to a few dozen rows,
-// which is what makes resolving the Mapping in JS cheap — the Mapping is not
-// row-keyed and stays in JSON, so it cannot be joined here.
+// which is what makes resolving the Mapping in JS cheap — it lives in
+// `cf_budget_map`, keyed by CF category rather than by row, so it is read once
+// and applied here rather than joined per Transaction.
 const BUDGET_SUMMARY_QUERY = `
   SELECT t.month_idx, o.budget_row AS override_row, t.cash_flow,
          SUM(t.inflow_cents + t.outflow_cents) AS cents
@@ -202,6 +203,49 @@ export function monthCategoryCents(year) {
   return byMonth;
 }
 
+// Elements detail needs per-Recipient actuals: cost, revenue, and how often each
+// CF category was used, so the most-frequent one can be suggested. Grouping by
+// (name, category) lets one scan answer all three.
+//
+// `first_seen` reproduces the tie-break of the JS loop it replaces: that walked
+// Months in calendar order and rows in sheet order, inserting each category on
+// first sight, and its "most frequent" pick used a strict `>` — so on a tie the
+// earliest-seen category won. `instr` over the Month names gives a monotonic
+// calendar ordinal (GEN=1, FEB=4, ...) without a twelve-branch CASE.
+const ELEMENT_TOTALS_QUERY = `
+  SELECT transaction_name, cash_flow,
+    COUNT(*) AS freq,
+    COALESCE(SUM(outflow_cents), 0) AS outflow_cents,
+    COALESCE(SUM(inflow_cents), 0) AS inflow_cents,
+    MIN(instr('GENFEBMARAPRMAGGIULUGAGOSETOTTNOVDIC', month) * 100000 + excel_row) AS first_seen
+  FROM transactions
+  WHERE year = ? AND excel_row IS NOT NULL AND transaction_name IS NOT NULL
+  GROUP BY transaction_name, cash_flow
+  ORDER BY first_seen
+`;
+
+/**
+ * Per-Recipient actuals for one Year, in integer cents.
+ *
+ * @param {string} year
+ * @returns {Record<string, { cost: number, revenue: number, catFreq: Record<string, number> }>}
+ */
+export function elementTotalsCents(year) {
+  const rows = /** @type {any[]} */ (getDb().prepare(ELEMENT_TOTALS_QUERY).all(String(year)));
+  /** @type {Record<string, { cost: number, revenue: number, catFreq: Record<string, number> }>} */
+  const byName = {};
+  for (const row of rows) {
+    if (!byName[row.transaction_name]) byName[row.transaction_name] = { cost: 0, revenue: 0, catFreq: {} };
+    const entry = byName[row.transaction_name];
+    entry.cost += row.outflow_cents;
+    entry.revenue += row.inflow_cents;
+    // An uncategorised Transaction still counts toward cost and revenue, but
+    // must not vote for a category — the JS `if (tx.cashFlow)` guard.
+    if (row.cash_flow) entry.catFreq[row.cash_flow] = (entry.catFreq[row.cash_flow] || 0) + row.freq;
+  }
+  return byName;
+}
+
 /**
  * Resolve a sheet position to a stable Transaction id.
  *
@@ -242,7 +286,8 @@ export async function getById(id) {
  * @returns {Promise<any[]>}
  */
 export async function listByMonth(year, month) {
-  // The global CF→Budget Mapping is not row-keyed, so it stays in JSON.
+  // The global CF→Budget Mapping lives in `cf_budget_map`, keyed by CF category
+  // rather than by row, so it is read once here rather than joined per row.
   const cfMap = await readCfBudgetMap().catch(() => ({}));
   const db = getDb();
   const y = String(year);

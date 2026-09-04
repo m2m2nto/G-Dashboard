@@ -179,7 +179,7 @@ export function commitBudgetOverride(db, id, cfCategory, budgetCategory, budgetR
   `).run(id, budgetCategory, budgetRow);
 }
 
-/** The global CF→Budget Mapping, which is not row-keyed and stays in JSON. */
+/** The global CF→Budget Mapping (`cf_budget_map`), keyed by CF category, not by row. */
 export function loadCfMap() {
   return readCfBudgetMap().catch(() => ({}));
 }

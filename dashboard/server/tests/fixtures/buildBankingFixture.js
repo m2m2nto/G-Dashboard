@@ -113,6 +113,14 @@ export async function buildBankingFixture(filePath, opts = {}) {
   elements.cell('C3').value('Cost');
   elements.cell('D3').value('Revenue');
 
+  // Element rows start at row 4. Additive: fixtures that pass nothing get the
+  // bare header layout they got before.
+  (opts.elements || []).forEach((el, i) => {
+    const r = 4 + i;
+    elements.cell(`A${r}`).value(typeof el === 'string' ? el : el.name);
+    if (typeof el !== 'string' && el.category) elements.cell(`B${r}`).value(el.category);
+  });
+
   // values sheet — CF category list referenced by data validation
   const values = wb.addSheet('values');
   values.cell('A1').value('Cash Flow Categories');
